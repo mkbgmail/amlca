@@ -190,6 +190,11 @@
                 <button class="btn-danger btn-sm" onclick="deleteTournament()">🗑 Delete Tournament</button>
                 <button class="btn-danger btn-sm" onclick="deleteDivision()">🗑 Delete Division</button>
             </div>
+            <div class="divider"></div>
+            <div class="form-row" style="margin-bottom:0;">
+                <button class="btn-warning" onclick="exportAllData()">💾 Export All Tournaments</button>
+                <button class="btn-warning" onclick="importAllData()">📂 Import All Tournaments</button>
+            </div>
         </div>
 
         <!-- Team Setup Section -->
@@ -243,9 +248,6 @@
         <div class="actions-bar" id="actionsBar" style="display:none;">
             <button class="btn-secondary" onclick="exportDivision()">📥 Export Division</button>
             <button class="btn-secondary" onclick="importDivision()">📤 Import Division</button>
-            <button class="btn-warning" onclick="exportAllData()">💾 Export All Tournaments</button>
-            <button class="btn-warning" onclick="importAllData()">📂 Import All Tournaments</button>
-            <input type="file" id="importFile" accept=".json" style="display:none">
         </div>
     </div>
 
@@ -654,8 +656,10 @@
 
     function importDivision() {
         if (currentTournamentIndex < 0) return alert('Select a tournament first.');
-        const input = document.getElementById('importFile');
-        input.onchange = function(e) {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+        input.addEventListener('change', function(e) {
             const file = e.target.files[0];
             if (!file) return;
             const reader = new FileReader();
@@ -667,21 +671,20 @@
                     const existingIdx = tournament.divisions.findIndex(d => d.name.toLowerCase() === data.name.toLowerCase());
                     if (existingIdx >= 0) {
                         if (!confirm(`Division "${data.name}" exists. Overwrite?`)) return;
-                        tournament.divisions[existingIdx] = data;
+                        tournament.divisions[existingIdx] = JSON.parse(JSON.stringify(data));
                         currentDivisionIndex = existingIdx;
                     } else {
-                        tournament.divisions.push(data);
+                        tournament.divisions.push(JSON.parse(JSON.stringify(data)));
                         currentDivisionIndex = tournament.divisions.length - 1;
                     }
+                    matchSlots = [];
                     saveAllData();
                     renderTournamentNav();
                     render();
-                    alert('Division imported!');
                 } catch (err) { alert('Invalid file: ' + err.message); }
             };
             reader.readAsText(file);
-            input.value = '';
-        };
+        });
         input.click();
     }
 
@@ -690,29 +693,30 @@
     }
 
     function importAllData() {
-        const input = document.getElementById('importFile');
-        input.onchange = function(e) {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+        input.addEventListener('change', function(e) {
             const file = e.target.files[0];
             if (!file) return;
             const reader = new FileReader();
             reader.onload = function(ev) {
                 try {
                     const data = JSON.parse(ev.target.result);
-                    if (!data.tournaments) throw new Error('Invalid format');
+                    if (!data.tournaments) throw new Error('Invalid format: missing tournaments array');
                     if (!confirm('This will replace ALL tournament data. Continue?')) return;
-                    allData = data;
+                    allData = JSON.parse(JSON.stringify(data));
                     currentTournamentIndex = allData.tournaments.length > 0 ? 0 : -1;
                     currentDivisionIndex = (currentTournamentIndex >= 0 && allData.tournaments[0].divisions.length > 0) ? 0 : -1;
                     currentDay = 1;
+                    matchSlots = [];
                     saveAllData();
                     renderTournamentNav();
                     render();
-                    alert('All data imported!');
                 } catch (err) { alert('Invalid file: ' + err.message); }
             };
             reader.readAsText(file);
-            input.value = '';
-        };
+        });
         input.click();
     }
 
