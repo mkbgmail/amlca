@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AMLCA Championship Points Calculator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { -webkit-text-size-adjust: 100%; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background-attachment: fixed;
+            color: #1a202c;
+            min-height: 100vh;
+            padding-bottom: 2rem;
+            -webkit-tap-highlight-color: transparent;
+        }
+        header {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+            color: white;
+            padding: 1.8rem 2rem;
+            text-align: center;
+        }
+        header h1 { font-size: 2rem; font-weight: 800; letter-spacing: -0.5px; text-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+        header p { opacity: 0.9; font-size: 0.95rem; margin-top: 0.3rem; font-weight: 500; }
+        .container { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
+        .section {
+            background: rgba(255,255,255,0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 1.8rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.08);
+            border: 1px solid rgba(255,255,255,0.8);
+        }
+        .section h2 {
+            font-size: 1.15rem; font-weight: 700; margin-bottom: 1.2rem; color: #4c1d95;
+            display: flex; align-items: center; gap: 0.5rem;
+        }
+        .section h2::before { content: ''; width: 4px; height: 1.2rem; background: linear-gradient(135deg, #667eea, #764ba2); border-radius: 2px; }
+
+        /* Nav bar for tournament/division */
+        .nav-bar {
+            display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; align-items: center;
+        }
+        .nav-bar select {
+            flex: 1; min-width: 140px;
+        }
+
+        /* Form Controls */
+        .form-row { display: flex; gap: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap; align-items: flex-end; }
+        .form-group { display: flex; flex-direction: column; gap: 0.35rem; flex: 1; min-width: 120px; }
+        .form-group label { font-size: 0.8rem; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }
+        input, select {
+            padding: 0.6rem 0.85rem; border: 2px solid #e5e7eb; border-radius: 10px;
+            font-size: 0.9rem; font-family: inherit; transition: all 0.2s; background: #f9fafb;
+        }
+        input:focus, select:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102,126,234,0.15); background: white; }
+        button {
+            padding: 0.6rem 1.3rem; border: none; border-radius: 10px; font-size: 0.85rem;
+            font-weight: 600; font-family: inherit; cursor: pointer; transition: all 0.2s;
+            display: inline-flex; align-items: center; gap: 0.4rem; justify-content: center;
+        }
+        button:active { transform: scale(0.97); }
+        .btn-primary { background: linear-gradient(135deg, #667eea, #764ba2); color: white; box-shadow: 0 4px 12px rgba(102,126,234,0.3); }
+        .btn-primary:hover { box-shadow: 0 6px 16px rgba(102,126,234,0.4); transform: translateY(-1px); }
+        .btn-danger { background: #fee2e2; color: #dc2626; }
+        .btn-danger:hover { background: #fecaca; }
+        .btn-success { background: #d1fae5; color: #059669; }
+        .btn-success:hover { background: #a7f3d0; }
+        .btn-secondary { background: #f3f4f6; color: #4b5563; }
+        .btn-secondary:hover { background: #e5e7eb; }
+        .btn-warning { background: #fef3c7; color: #d97706; }
+        .btn-warning:hover { background: #fde68a; }
+        .btn-sm { padding: 0.35rem 0.7rem; font-size: 0.78rem; border-radius: 8px; }
+
+        /* Table */
+        .table-wrapper { overflow-x: auto; border-radius: 12px; border: 1px solid #e5e7eb; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 0.7rem 1rem; text-align: left; }
+        th { background: linear-gradient(135deg, #f8fafc, #f1f5f9); font-size: 0.75rem; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.8px; border-bottom: 2px solid #e5e7eb; }
+        td { font-size: 0.9rem; border-bottom: 1px solid #f3f4f6; }
+        tr:hover td { background: #faf5ff; }
+        tr:last-child td { border-bottom: none; }
+        .rank-cell { font-weight: 800; color: #7c3aed; width: 40px; }
+        .points-cell { font-weight: 700; font-size: 1rem; color: #1f2937; }
+        .team-name-cell { font-weight: 600; }
+        .remove-btn { background: none; border: none; color: #d1d5db; cursor: pointer; font-size: 1.1rem; padding: 0.3rem; border-radius: 6px; transition: all 0.2s; }
+        .remove-btn:hover { color: #ef4444; background: #fee2e2; }
+
+        /* Day selector */
+        .day-selector { display: flex; gap: 0.5rem; margin-bottom: 1.2rem; flex-wrap: wrap; }
+        .day-btn { padding: 0.55rem 1.2rem; border: 2px solid #e5e7eb; border-radius: 10px; background: white; cursor: pointer; font-weight: 600; font-family: inherit; font-size: 0.85rem; transition: all 0.2s; color: #6b7280; }
+        .day-btn.active { border-color: #7c3aed; background: linear-gradient(135deg, #ede9fe, #f5f3ff); color: #7c3aed; box-shadow: 0 2px 8px rgba(124,58,237,0.15); }
+        .day-btn:hover { border-color: #7c3aed; color: #7c3aed; }
+
+        /* Match card */
+        .match-card { background: linear-gradient(135deg, #f8fafc, #f1f5f9); border: 2px solid #e5e7eb; border-radius: 12px; padding: 1rem 1.2rem; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; transition: all 0.2s; }
+        .match-card:hover { border-color: #c4b5fd; }
+        .match-card select { min-width: 170px; }
+        .vs-label { font-weight: 800; color: #9ca3af; font-size: 0.85rem; letter-spacing: 1px; }
+        .winner-select { border-color: #10b981 !important; background: #ecfdf5 !important; }
+        .match-card-actions { display: flex; gap: 0.5rem; }
+
+        /* Match result */
+        .match-result { background: linear-gradient(135deg, #ecfdf5, #f0fdf4); border: 1px solid #bbf7d0; border-radius: 12px; padding: 0.8rem 1.2rem; margin-bottom: 0.6rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; transition: all 0.2s; }
+        .match-result:hover { box-shadow: 0 2px 8px rgba(16,185,129,0.1); }
+        .match-result .winner-badge { background: linear-gradient(135deg, #059669, #10b981); color: white; padding: 0.2rem 0.6rem; border-radius: 6px; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.5px; }
+        .match-result .result-text { font-size: 0.9rem; font-weight: 500; }
+
+        .history-day { margin-bottom: 1.2rem; }
+        .history-day h3 { font-size: 0.9rem; font-weight: 700; color: #7c3aed; margin-bottom: 0.6rem; padding-left: 0.3rem; }
+        .actions-bar { display: flex; gap: 0.75rem; flex-wrap: wrap; justify-content: center; }
+        .exception-note { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 0.5rem 1rem; font-size: 0.8rem; color: #92400e; margin-top: 0.3rem; margin-bottom: 0.5rem; }
+        .empty-state { text-align: center; padding: 2.5rem 1rem; color: #9ca3af; font-size: 0.9rem; }
+        .empty-state::before { content: '📋'; display: block; font-size: 2rem; margin-bottom: 0.5rem; }
+        .badge-count { background: #ede9fe; color: #7c3aed; font-size: 0.7rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 10px; margin-left: 0.5rem; }
+        .divider { height: 1px; background: #e5e7eb; margin: 1rem 0; }
+
+        @media (max-width: 768px) {
+            header { padding: 1.4rem 1rem; }
+            header h1 { font-size: 1.5rem; }
+            .container { padding: 0.8rem; }
+            .section { padding: 1.2rem; border-radius: 14px; }
+            .form-row { flex-direction: column; gap: 0.6rem; }
+            .form-row .form-group { width: 100%; }
+            .form-row input, .form-row select { width: 100%; }
+            .form-row button { width: 100%; padding: 0.75rem; }
+            .nav-bar { flex-direction: column; }
+            .nav-bar select { width: 100%; }
+            .nav-bar button { width: 100%; }
+            .day-selector { gap: 0.4rem; }
+            .day-btn { flex: 1; text-align: center; padding: 0.7rem 0.5rem; font-size: 0.85rem; }
+            .match-card { flex-direction: column; align-items: stretch; gap: 0.6rem; padding: 1rem; }
+            .match-card select { min-width: unset; width: 100%; padding: 0.7rem 0.85rem; font-size: 0.9rem; }
+            .vs-label { text-align: center; padding: 0.2rem 0; }
+            .match-card .btn-sm { padding: 0.6rem; font-size: 0.85rem; width: 100%; }
+            .match-card-actions { width: 100%; }
+            .match-card-actions .btn-sm { flex: 1; }
+            .match-result { flex-direction: column; align-items: flex-start; gap: 0.4rem; padding: 0.9rem 1rem; }
+            .match-result .btn-sm { align-self: flex-end; margin-top: 0.3rem; }
+            .table-wrapper { border-radius: 10px; }
+            th, td { padding: 0.55rem 0.6rem; font-size: 0.82rem; }
+            .points-cell { font-size: 0.9rem; }
+            button { min-height: 44px; }
+            .btn-sm { min-height: 38px; }
+            .actions-bar { flex-direction: column; }
+            .actions-bar button { width: 100%; }
+        }
+        @media (max-width: 380px) {
+            header h1 { font-size: 1.3rem; }
+            .section { padding: 1rem; }
+            th, td { padding: 0.45rem 0.4rem; font-size: 0.78rem; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🏏 AMLCA Championship</h1>
+        <p>Performance-Based Points Calculator</p>
+    </header>
+
+    <div class="container">
+        <!-- Tournament & Division Selector -->
+        <div class="section">
+            <h2>Tournament & Division</h2>
+            <div class="nav-bar">
+                <select id="tournamentSelect" onchange="switchTournament(this.value)"></select>
+                <select id="divisionSelect" onchange="switchDivision(this.value)"></select>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>New Tournament</label>
+                    <input type="text" id="newTournamentName" placeholder="e.g. Morrisville 2025">
+                </div>
+                <button class="btn-primary" onclick="createTournament()">+ Tournament</button>
+                <div class="form-group">
+                    <label>New Division</label>
+                    <input type="text" id="newDivisionName" placeholder="e.g. DIV A U11">
+                </div>
+                <button class="btn-primary" onclick="createDivision()">+ Division</button>
+            </div>
+            <div class="form-row" style="margin-bottom:0;">
+                <button class="btn-danger btn-sm" onclick="deleteTournament()">🗑 Delete Tournament</button>
+                <button class="btn-danger btn-sm" onclick="deleteDivision()">🗑 Delete Division</button>
+            </div>
+        </div>
+
+        <!-- Team Setup Section -->
+        <div class="section" id="mainContent" style="display:none;">
+            <h2>Team Setup <span class="badge-count" id="teamCount">0 teams</span></h2>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="teamName">Team Name</label>
+                    <input type="text" id="teamName" placeholder="Enter team name">
+                </div>
+                <div class="form-group">
+                    <label for="teamRating">Starting Rating</label>
+                    <input type="number" id="teamRating" placeholder="e.g. 2000" value="2000">
+                </div>
+                <button class="btn-primary" onclick="addTeam()">+ Add Team</button>
+            </div>
+            <div id="standingsTableContainer">
+                <div class="table-wrapper">
+                    <table>
+                        <thead><tr><th>#</th><th>Team</th><th>Rating</th><th>W</th><th>L</th><th></th></tr></thead>
+                        <tbody id="standingsBody"></tbody>
+                    </table>
+                </div>
+                <div id="emptyTeams" class="empty-state">No teams added yet. Add 8–12 teams to get started.</div>
+            </div>
+        </div>
+
+        <!-- Match Day Section -->
+        <div class="section" id="matchDaySection" style="display:none;">
+            <h2>Match Day</h2>
+            <div class="day-selector" id="daySelector">
+                <button class="day-btn active" onclick="selectDay(1)">Day 1</button>
+                <button class="day-btn" onclick="selectDay(2)">Day 2</button>
+                <button class="day-btn" onclick="selectDay(3)">Day 3</button>
+                <button class="day-btn" onclick="selectDay(4)">Day 4</button>
+            </div>
+            <div id="matchSetup">
+                <div id="matchCards"></div>
+                <button class="btn-secondary" onclick="addMatch()">+ Add Match</button>
+            </div>
+            <div id="dayResults" style="margin-top: 1.2rem;"></div>
+        </div>
+
+        <!-- History Section -->
+        <div class="section" id="historySection" style="display:none;">
+            <h2>Results History</h2>
+            <div id="historyContainer"><div class="empty-state">No matches played yet.</div></div>
+        </div>
+
+        <!-- Actions -->
+        <div class="actions-bar" id="actionsBar" style="display:none;">
+            <button class="btn-secondary" onclick="exportDivision()">📥 Export Division</button>
+            <button class="btn-secondary" onclick="importDivision()">📤 Import Division</button>
+            <button class="btn-warning" onclick="exportAllData()">💾 Export All Tournaments</button>
+            <button class="btn-warning" onclick="importAllData()">📂 Import All Tournaments</button>
+            <input type="file" id="importFile" accept=".json" style="display:none">
+        </div>
+    </div>
+
+    <script>
+    // ===== DATA STRUCTURE =====
+    // allData = { tournaments: [ { name, divisions: [ { name, teams, matchHistory } ] } ] }
+    // Active state pointers
+    let allData = { tournaments: [] };
+    let currentTournamentIndex = -1;
+    let currentDivisionIndex = -1;
+    let currentDay = 1;
+    let matchSlots = [];
+
+    // Shortcuts to current division data
+    function getCurrentDivision() {
+        if (currentTournamentIndex < 0 || currentDivisionIndex < 0) return null;
+        const t = allData.tournaments[currentTournamentIndex];
+        if (!t) return null;
+        return t.divisions[currentDivisionIndex] || null;
+    }
+    function getTeams() { const d = getCurrentDivision(); return d ? d.teams : []; }
+    function getMatchHistory() { const d = getCurrentDivision(); return d ? d.matchHistory : []; }
+
+    // ===== PERSISTENCE (localStorage) =====
+    function loadAllData() {
+        const saved = localStorage.getItem('amlca_all_data');
+        if (saved) {
+            allData = JSON.parse(saved);
+        }
+        const meta = localStorage.getItem('amlca_meta');
+        if (meta) {
+            const m = JSON.parse(meta);
+            currentTournamentIndex = m.tournamentIndex ?? -1;
+            currentDivisionIndex = m.divisionIndex ?? -1;
+            currentDay = m.currentDay ?? 1;
+        }
+        renderTournamentNav();
+        render();
+    }
+
+    function saveAllData() {
+        localStorage.setItem('amlca_all_data', JSON.stringify(allData));
+        localStorage.setItem('amlca_meta', JSON.stringify({
+            tournamentIndex: currentTournamentIndex,
+            divisionIndex: currentDivisionIndex,
+            currentDay
+        }));
+    }
+
+    // ===== TOURNAMENT & DIVISION MANAGEMENT =====
+    function createTournament() {
+        const name = document.getElementById('newTournamentName').value.trim();
+        if (!name) return alert('Enter a tournament name.');
+        if (allData.tournaments.find(t => t.name.toLowerCase() === name.toLowerCase())) return alert('Tournament already exists.');
+        allData.tournaments.push({ name, divisions: [] });
+        currentTournamentIndex = allData.tournaments.length - 1;
+        currentDivisionIndex = -1;
+        document.getElementById('newTournamentName').value = '';
+        saveAllData();
+        renderTournamentNav();
+        render();
+    }
+
+    function createDivision() {
+        if (currentTournamentIndex < 0) return alert('Select or create a tournament first.');
+        const name = document.getElementById('newDivisionName').value.trim();
+        if (!name) return alert('Enter a division name.');
+        const tournament = allData.tournaments[currentTournamentIndex];
+        if (tournament.divisions.find(d => d.name.toLowerCase() === name.toLowerCase())) return alert('Division already exists in this tournament.');
+        tournament.divisions.push({ name, teams: [], matchHistory: [] });
+        currentDivisionIndex = tournament.divisions.length - 1;
+        document.getElementById('newDivisionName').value = '';
+        saveAllData();
+        renderTournamentNav();
+        render();
+    }
+
+    function deleteTournament() {
+        if (currentTournamentIndex < 0) return alert('No tournament selected.');
+        const name = allData.tournaments[currentTournamentIndex].name;
+        if (!confirm(`Delete tournament "${name}" and all its divisions? This cannot be undone.`)) return;
+        allData.tournaments.splice(currentTournamentIndex, 1);
+        currentTournamentIndex = allData.tournaments.length > 0 ? 0 : -1;
+        currentDivisionIndex = -1;
+        if (currentTournamentIndex >= 0 && allData.tournaments[currentTournamentIndex].divisions.length > 0) {
+            currentDivisionIndex = 0;
+        }
+        saveAllData();
+        renderTournamentNav();
+        render();
+    }
+
+    function deleteDivision() {
+        if (currentDivisionIndex < 0) return alert('No division selected.');
+        const div = getCurrentDivision();
+        if (!confirm(`Delete division "${div.name}"? This cannot be undone.`)) return;
+        const tournament = allData.tournaments[currentTournamentIndex];
+        tournament.divisions.splice(currentDivisionIndex, 1);
+        currentDivisionIndex = tournament.divisions.length > 0 ? 0 : -1;
+        saveAllData();
+        renderTournamentNav();
+        render();
+    }
+
+    function switchTournament(idx) {
+        currentTournamentIndex = parseInt(idx);
+        const tournament = allData.tournaments[currentTournamentIndex];
+        currentDivisionIndex = tournament && tournament.divisions.length > 0 ? 0 : -1;
+        currentDay = 1;
+        matchSlots = [];
+        saveAllData();
+        renderTournamentNav();
+        render();
+    }
+
+    function switchDivision(idx) {
+        currentDivisionIndex = parseInt(idx);
+        currentDay = 1;
+        matchSlots = [];
+        saveAllData();
+        render();
+    }
+
+    function renderTournamentNav() {
+        const tSelect = document.getElementById('tournamentSelect');
+        const dSelect = document.getElementById('divisionSelect');
+
+        if (allData.tournaments.length === 0) {
+            tSelect.innerHTML = '<option value="-1">-- No Tournaments --</option>';
+            dSelect.innerHTML = '<option value="-1">-- No Divisions --</option>';
+            return;
+        }
+
+        tSelect.innerHTML = allData.tournaments.map((t, i) =>
+            `<option value="${i}" ${i === currentTournamentIndex ? 'selected' : ''}>${t.name}</option>`
+        ).join('');
+
+        if (currentTournamentIndex >= 0) {
+            const divs = allData.tournaments[currentTournamentIndex].divisions;
+            if (divs.length === 0) {
+                dSelect.innerHTML = '<option value="-1">-- No Divisions --</option>';
+            } else {
+                dSelect.innerHTML = divs.map((d, i) =>
+                    `<option value="${i}" ${i === currentDivisionIndex ? 'selected' : ''}>${d.name}</option>`
+                ).join('');
+            }
+        }
+    }
+
+    // ===== TEAM MANAGEMENT =====
+    function addTeam() {
+        const div = getCurrentDivision();
+        if (!div) return alert('Select a division first.');
+        const nameInput = document.getElementById('teamName');
+        const ratingInput = document.getElementById('teamRating');
+        const name = nameInput.value.trim();
+        const rating = parseInt(ratingInput.value) || 2000;
+
+        if (!name) return alert('Please enter a team name.');
+        if (div.teams.find(t => t.name.toLowerCase() === name.toLowerCase())) return alert('Team already exists.');
+        if (div.teams.length >= 12) return alert('Maximum 12 teams allowed.');
+
+        div.teams.push({ name, rating, initialRating: rating, wins: 0, losses: 0, gamesPlayed: 0, ratingNumeratorSum: rating });
+        nameInput.value = '';
+        ratingInput.value = '2000';
+        saveAllData();
+        render();
+    }
+
+    function removeTeam(index) {
+        const div = getCurrentDivision();
+        if (div.matchHistory.length > 0) return alert('Cannot remove teams after matches have been played. Delete all matches first.');
+        div.teams.splice(index, 1);
+        saveAllData();
+        render();
+    }
+
+    // ===== DAY SELECTION =====
+    function selectDay(day) {
+        currentDay = day;
+        matchSlots = [];
+        saveAllData();
+        render();
+    }
+
+    // ===== MATCH MANAGEMENT =====
+    function addMatch() {
+        const teams = getTeams();
+        if (teams.length < 2) return alert('Need at least 2 teams.');
+        const teamsPlayedToday = getTeamsPlayedToday();
+        const pendingTeams = new Set();
+        matchSlots.forEach(slot => { if (slot.team1) pendingTeams.add(slot.team1); if (slot.team2) pendingTeams.add(slot.team2); });
+        const availableCount = teams.filter(t => !teamsPlayedToday.has(t.name) && !pendingTeams.has(t.name)).length;
+        if (availableCount < 2) return alert('No more teams available today. Each team plays once per day.');
+        matchSlots.push({ team1: '', team2: '', winner: '' });
+        renderMatchCards();
+    }
+
+    function removeMatch(index) { matchSlots.splice(index, 1); renderMatchCards(); }
+
+    function getTeamsPlayedToday() {
+        const history = getMatchHistory();
+        const dayEntry = history.find(h => h.day === currentDay);
+        if (!dayEntry) return new Set();
+        const played = new Set();
+        dayEntry.matches.forEach(m => { played.add(m.team1); played.add(m.team2); });
+        return played;
+    }
+
+    function getTeamsInPendingSlots(excludeIdx) {
+        const assigned = new Set();
+        matchSlots.forEach((slot, i) => { if (i === excludeIdx) return; if (slot.team1) assigned.add(slot.team1); if (slot.team2) assigned.add(slot.team2); });
+        return assigned;
+    }
+
+    function updateMatchSlot(index, field, value) { matchSlots[index][field] = value; renderMatchCards(); }
+
+    // ===== POINTS CALCULATION =====
+    function calculateNewRating(team, opponentRating, isWin) {
+        const pointDiff = Math.abs(team.rating - opponentRating);
+        let exceptionApplied = false;
+        const matchContribution = isWin ? opponentRating + 100 : opponentRating - 100;
+        const newNumeratorSum = team.ratingNumeratorSum + matchContribution;
+        const newGamesPlayed = team.gamesPlayed + 1;
+        let newRating = Math.round(newNumeratorSum / (newGamesPlayed + 1));
+
+        if (pointDiff > 100) {
+            if (isWin && newRating < team.rating) {
+                const exNumerator = team.ratingNumeratorSum + team.rating;
+                newRating = Math.round(exNumerator / (newGamesPlayed + 1));
+                return { newRating, newNumeratorSum: exNumerator, newGamesPlayed, exceptionApplied: true };
+            } else if (!isWin && newRating > team.rating) {
+                const exNumerator = team.ratingNumeratorSum + team.rating;
+                newRating = Math.round(exNumerator / (newGamesPlayed + 1));
+                return { newRating, newNumeratorSum: exNumerator, newGamesPlayed, exceptionApplied: true };
+            }
+        }
+        return { newRating, newNumeratorSum, newGamesPlayed, exceptionApplied };
+    }
+
+    function recordMatch(index) {
+        const slot = matchSlots[index];
+        if (!slot.team1 || !slot.team2 || !slot.winner) return alert('Select both teams and a winner.');
+        if (slot.team1 === slot.team2) return alert('A team cannot play itself.');
+        const teamsPlayedToday = getTeamsPlayedToday();
+        if (teamsPlayedToday.has(slot.team1)) return alert(`${slot.team1} already played today.`);
+        if (teamsPlayedToday.has(slot.team2)) return alert(`${slot.team2} already played today.`);
+
+        const teams = getTeams();
+        const team1 = teams.find(t => t.name === slot.team1);
+        const team2 = teams.find(t => t.name === slot.team2);
+        const team1Wins = slot.winner === slot.team1;
+        const t1Before = team1.rating, t2Before = team2.rating;
+
+        const r1 = calculateNewRating(team1, t2Before, team1Wins);
+        const r2 = calculateNewRating(team2, t1Before, !team1Wins);
+
+        team1.rating = r1.newRating; team1.ratingNumeratorSum = r1.newNumeratorSum; team1.gamesPlayed = r1.newGamesPlayed;
+        if (team1Wins) team1.wins++; else team1.losses++;
+        team2.rating = r2.newRating; team2.ratingNumeratorSum = r2.newNumeratorSum; team2.gamesPlayed = r2.newGamesPlayed;
+        if (!team1Wins) team2.wins++; else team2.losses++;
+
+        const history = getMatchHistory();
+        let dayEntry = history.find(h => h.day === currentDay);
+        if (!dayEntry) { dayEntry = { day: currentDay, matches: [] }; history.push(dayEntry); }
+        dayEntry.matches.push({ team1: slot.team1, team2: slot.team2, winner: slot.winner, team1RatingBefore: t1Before, team2RatingBefore: t2Before, team1RatingAfter: team1.rating, team2RatingAfter: team2.rating, exception1: r1.exceptionApplied, exception2: r2.exceptionApplied });
+
+        matchSlots.splice(index, 1);
+        saveAllData();
+        render();
+    }
+
+    function deleteMatch(day, matchIndex) {
+        const history = getMatchHistory();
+        const dayEntry = history.find(h => h.day === day);
+        if (!dayEntry) return;
+        const match = dayEntry.matches[matchIndex];
+        const loser = match.winner === match.team1 ? match.team2 : match.team1;
+        if (!confirm(`Delete match: ${match.winner} defeated ${loser}?`)) return;
+        dayEntry.matches.splice(matchIndex, 1);
+        const div = getCurrentDivision();
+        div.matchHistory = history.filter(h => h.matches.length > 0);
+        recalculateAllRatings();
+        saveAllData();
+        render();
+    }
+
+    function recalculateAllRatings() {
+        const div = getCurrentDivision();
+        if (!div) return;
+        div.teams.forEach(t => { t.rating = t.initialRating; t.ratingNumeratorSum = t.initialRating; t.gamesPlayed = 0; t.wins = 0; t.losses = 0; });
+        const sortedDays = [...div.matchHistory].sort((a, b) => a.day - b.day);
+        sortedDays.forEach(dayEntry => {
+            dayEntry.matches.forEach(match => {
+                const team1 = div.teams.find(t => t.name === match.team1);
+                const team2 = div.teams.find(t => t.name === match.team2);
+                if (!team1 || !team2) return;
+                const team1Wins = match.winner === match.team1;
+                const t1Before = team1.rating, t2Before = team2.rating;
+                const r1 = calculateNewRating(team1, t2Before, team1Wins);
+                const r2 = calculateNewRating(team2, t1Before, !team1Wins);
+                team1.rating = r1.newRating; team1.ratingNumeratorSum = r1.newNumeratorSum; team1.gamesPlayed = r1.newGamesPlayed;
+                if (team1Wins) team1.wins++; else team1.losses++;
+                team2.rating = r2.newRating; team2.ratingNumeratorSum = r2.newNumeratorSum; team2.gamesPlayed = r2.newGamesPlayed;
+                if (!team1Wins) team2.wins++; else team2.losses++;
+                match.team1RatingBefore = t1Before; match.team2RatingBefore = t2Before;
+                match.team1RatingAfter = team1.rating; match.team2RatingAfter = team2.rating;
+                match.exception1 = r1.exceptionApplied; match.exception2 = r2.exceptionApplied;
+            });
+        });
+    }
+
+    // ===== RENDERING =====
+    function render() {
+        const hasDiv = getCurrentDivision() !== null;
+        document.getElementById('mainContent').style.display = hasDiv ? 'block' : 'none';
+        document.getElementById('matchDaySection').style.display = hasDiv ? 'block' : 'none';
+        document.getElementById('historySection').style.display = hasDiv ? 'block' : 'none';
+        document.getElementById('actionsBar').style.display = hasDiv ? 'flex' : 'none';
+        if (!hasDiv) return;
+        renderStandings();
+        renderDaySelector();
+        renderMatchCards();
+        renderDayResults();
+        renderHistory();
+    }
+
+    function renderStandings() {
+        const teams = getTeams();
+        const body = document.getElementById('standingsBody');
+        const empty = document.getElementById('emptyTeams');
+        const countBadge = document.getElementById('teamCount');
+        countBadge.textContent = teams.length + ' team' + (teams.length !== 1 ? 's' : '');
+        if (teams.length === 0) { body.innerHTML = ''; empty.style.display = 'block'; document.querySelector('.table-wrapper').style.display = 'none'; return; }
+        empty.style.display = 'none';
+        document.querySelector('.table-wrapper').style.display = 'block';
+        const sorted = [...teams].sort((a, b) => b.rating - a.rating);
+        body.innerHTML = sorted.map((t, i) => `<tr><td class="rank-cell">${i+1}</td><td class="team-name-cell">${t.name}</td><td class="points-cell">${t.rating}</td><td>${t.wins}</td><td>${t.losses}</td><td><button class="remove-btn" onclick="removeTeam(${teams.indexOf(t)})">✕</button></td></tr>`).join('');
+    }
+
+    function renderDaySelector() {
+        document.querySelectorAll('.day-btn').forEach((btn, i) => btn.classList.toggle('active', i + 1 === currentDay));
+    }
+
+    function renderMatchCards() {
+        const container = document.getElementById('matchCards');
+        const teams = getTeams();
+        if (matchSlots.length === 0) { container.innerHTML = '<div class="empty-state">Click "+ Add Match" to set up matches for this day.</div>'; return; }
+        const teamsPlayedToday = getTeamsPlayedToday();
+        container.innerHTML = matchSlots.map((slot, i) => {
+            const pending = getTeamsInPendingSlots(i);
+            const avail1 = teams.filter(t => !teamsPlayedToday.has(t.name) && (!pending.has(t.name) || t.name === slot.team1) && t.name !== slot.team2);
+            const avail2 = teams.filter(t => !teamsPlayedToday.has(t.name) && (!pending.has(t.name) || t.name === slot.team2) && t.name !== slot.team1);
+            const opts1 = avail1.map(t => `<option value="${t.name}" ${slot.team1===t.name?'selected':''}>${t.name} (${t.rating})</option>`).join('');
+            const opts2 = avail2.map(t => `<option value="${t.name}" ${slot.team2===t.name?'selected':''}>${t.name} (${t.rating})</option>`).join('');
+            const wOpts = [];
+            if (slot.team1) wOpts.push(`<option value="${slot.team1}" ${slot.winner===slot.team1?'selected':''}>${slot.team1}</option>`);
+            if (slot.team2) wOpts.push(`<option value="${slot.team2}" ${slot.winner===slot.team2?'selected':''}>${slot.team2}</option>`);
+            return `<div class="match-card"><select onchange="updateMatchSlot(${i},'team1',this.value)"><option value="">Team 1</option>${opts1}</select><span class="vs-label">VS</span><select onchange="updateMatchSlot(${i},'team2',this.value)"><option value="">Team 2</option>${opts2}</select><select class="winner-select" onchange="updateMatchSlot(${i},'winner',this.value)"><option value="">Winner</option>${wOpts.join('')}</select><div class="match-card-actions"><button class="btn-success btn-sm" onclick="recordMatch(${i})">✓ Record</button><button class="btn-danger btn-sm" onclick="removeMatch(${i})">✕</button></div></div>`;
+        }).join('');
+    }
+
+    function renderDayResults() {
+        const container = document.getElementById('dayResults');
+        const history = getMatchHistory();
+        const dayEntry = history.find(h => h.day === currentDay);
+        if (!dayEntry || dayEntry.matches.length === 0) { container.innerHTML = ''; return; }
+        container.innerHTML = '<h3 style="font-size:0.9rem;font-weight:700;color:#7c3aed;margin-bottom:0.6rem;">Day '+currentDay+' Results</h3>' +
+            dayEntry.matches.map((m, idx) => {
+                const loser = m.winner===m.team1?m.team2:m.team1;
+                const wB = m.winner===m.team1?m.team1RatingBefore:m.team2RatingBefore;
+                const wA = m.winner===m.team1?m.team1RatingAfter:m.team2RatingAfter;
+                const lB = m.winner===m.team1?m.team2RatingBefore:m.team1RatingBefore;
+                const lA = m.winner===m.team1?m.team2RatingAfter:m.team1RatingAfter;
+                const exW = m.winner===m.team1?m.exception1:m.exception2;
+                const exL = m.winner===m.team1?m.exception2:m.exception1;
+                let exNote = (exW||exL) ? `<div class="exception-note">⚠️ Exception (>100 pts gap): rating held for ${exW?m.winner:loser}</div>` : '';
+                return `<div class="match-result"><span class="result-text"><span class="winner-badge">WIN</span> ${m.winner} (${wB}→${wA})</span><span class="result-text" style="color:#6b7280">defeated</span><span class="result-text">${loser} (${lB}→${lA})</span><button class="btn-danger btn-sm" onclick="deleteMatch(${currentDay},${idx})">🗑 Undo</button></div>${exNote}`;
+            }).join('');
+    }
+
+    function renderHistory() {
+        const container = document.getElementById('historyContainer');
+        const history = getMatchHistory();
+        if (history.length === 0 || history.every(d => d.matches.length === 0)) { container.innerHTML = '<div class="empty-state">No matches played yet.</div>'; return; }
+        container.innerHTML = [...history].sort((a,b)=>a.day-b.day).map(dayEntry => {
+            if (dayEntry.matches.length === 0) return '';
+            return `<div class="history-day"><h3>Day ${dayEntry.day}</h3>${dayEntry.matches.map((m,idx) => {
+                const loser = m.winner===m.team1?m.team2:m.team1;
+                const wB = m.winner===m.team1?m.team1RatingBefore:m.team2RatingBefore;
+                const wA = m.winner===m.team1?m.team1RatingAfter:m.team2RatingAfter;
+                const lB = m.winner===m.team1?m.team2RatingBefore:m.team1RatingBefore;
+                const lA = m.winner===m.team1?m.team2RatingAfter:m.team1RatingAfter;
+                return `<div class="match-result"><span class="result-text"><span class="winner-badge">WIN</span> ${m.winner} (${wB}→${wA})</span><span class="result-text" style="color:#6b7280">def.</span><span class="result-text">${loser} (${lB}→${lA})</span><button class="btn-danger btn-sm" onclick="deleteMatch(${dayEntry.day},${idx})">🗑 Undo</button></div>`;
+            }).join('')}</div>`;
+        }).join('');
+    }
+
+    // ===== IMPORT / EXPORT =====
+    function exportDivision() {
+        const div = getCurrentDivision();
+        if (!div) return;
+        const data = JSON.stringify(div, null, 2);
+        downloadJSON(data, `${allData.tournaments[currentTournamentIndex].name}_${div.name}.json`);
+    }
+
+    function importDivision() {
+        if (currentTournamentIndex < 0) return alert('Select a tournament first.');
+        const input = document.getElementById('importFile');
+        input.onchange = function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                try {
+                    const data = JSON.parse(ev.target.result);
+                    if (!data.name || !data.teams) throw new Error('Invalid division format');
+                    const tournament = allData.tournaments[currentTournamentIndex];
+                    const existingIdx = tournament.divisions.findIndex(d => d.name.toLowerCase() === data.name.toLowerCase());
+                    if (existingIdx >= 0) {
+                        if (!confirm(`Division "${data.name}" exists. Overwrite?`)) return;
+                        tournament.divisions[existingIdx] = data;
+                        currentDivisionIndex = existingIdx;
+                    } else {
+                        tournament.divisions.push(data);
+                        currentDivisionIndex = tournament.divisions.length - 1;
+                    }
+                    saveAllData();
+                    renderTournamentNav();
+                    render();
+                    alert('Division imported!');
+                } catch (err) { alert('Invalid file: ' + err.message); }
+            };
+            reader.readAsText(file);
+            input.value = '';
+        };
+        input.click();
+    }
+
+    function exportAllData() {
+        downloadJSON(JSON.stringify(allData, null, 2), 'amlca_all_tournaments.json');
+    }
+
+    function importAllData() {
+        const input = document.getElementById('importFile');
+        input.onchange = function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                try {
+                    const data = JSON.parse(ev.target.result);
+                    if (!data.tournaments) throw new Error('Invalid format');
+                    if (!confirm('This will replace ALL tournament data. Continue?')) return;
+                    allData = data;
+                    currentTournamentIndex = allData.tournaments.length > 0 ? 0 : -1;
+                    currentDivisionIndex = (currentTournamentIndex >= 0 && allData.tournaments[0].divisions.length > 0) ? 0 : -1;
+                    currentDay = 1;
+                    saveAllData();
+                    renderTournamentNav();
+                    render();
+                    alert('All data imported!');
+                } catch (err) { alert('Invalid file: ' + err.message); }
+            };
+            reader.readAsText(file);
+            input.value = '';
+        };
+        input.click();
+    }
+
+    function downloadJSON(data, filename) {
+        const blob = new Blob([data], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename; a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    // ===== EVENT LISTENERS =====
+    document.getElementById('teamName').addEventListener('keypress', e => { if (e.key === 'Enter') addTeam(); });
+
+    // ===== INIT =====
+    loadAllData();
+    </script>
+</body>
+</html>
