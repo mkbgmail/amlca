@@ -214,11 +214,11 @@
             <div id="standingsTableContainer">
                 <div class="table-wrapper">
                     <table>
-                        <thead><tr><th>#</th><th>Team</th><th>Rating</th><th>W</th><th>L</th><th></th></tr></thead>
+                        <thead><tr><th>#</th><th>Team</th><th>Rating</th><th>W</th><th>L</th><th>NRR</th><th></th></tr></thead>
                         <tbody id="standingsBody"></tbody>
                     </table>
                 </div>
-                <div id="emptyTeams" class="empty-state">No teams added yet. Add 8–12 teams to get started.</div>
+                <div id="emptyTeams" class="empty-state">No teams added yet. Add 8–16 teams to get started.</div>
             </div>
         </div>
 
@@ -408,7 +408,7 @@
 
         if (!name) return alert('Please enter a team name.');
         if (div.teams.find(t => t.name.toLowerCase() === name.toLowerCase())) return alert('Team already exists.');
-        if (div.teams.length >= 12) return alert('Maximum 12 teams allowed.');
+        if (div.teams.length >= 20) return alert('Maximum 20 teams allowed.');
 
         div.teams.push({ name, rating, initialRating: rating, wins: 0, losses: 0, gamesPlayed: 0, ratingNumeratorSum: rating });
         nameInput.value = '';
@@ -438,9 +438,10 @@
         const teams = getTeams();
         if (teams.length < 2) return alert('Need at least 2 teams.');
         const teamsPlayedToday = getTeamsPlayedToday();
+        const teamsScheduledToday = getTeamsScheduledToday();
         const pendingTeams = new Set();
         matchSlots.forEach(slot => { if (slot.team1) pendingTeams.add(slot.team1); if (slot.team2) pendingTeams.add(slot.team2); });
-        const availableCount = teams.filter(t => !teamsPlayedToday.has(t.name) && !pendingTeams.has(t.name)).length;
+        const availableCount = teams.filter(t => !teamsPlayedToday.has(t.name) && !teamsScheduledToday.has(t.name) && !pendingTeams.has(t.name)).length;
         if (availableCount < 2) return alert('No more teams available today. Each team plays once per day.');
         matchSlots.push({ team1: '', team2: '', winner: '' });
         renderMatchCards();
@@ -457,6 +458,15 @@
         return played;
     }
 
+    function getTeamsScheduledToday() {
+        const div = getCurrentDivision();
+        if (!div || !div.scheduledMatches) return new Set();
+        const scheduled = new Set();
+        const dayMatches = div.scheduledMatches.filter(m => m.day === currentDay);
+        dayMatches.forEach(m => { scheduled.add(m.team1); scheduled.add(m.team2); });
+        return scheduled;
+    }
+
     function getTeamsInPendingSlots(excludeIdx) {
         const assigned = new Set();
         matchSlots.forEach((slot, i) => { if (i === excludeIdx) return; if (slot.team1) assigned.add(slot.team1); if (slot.team2) assigned.add(slot.team2); });
@@ -464,6 +474,137 @@
     }
 
     function updateMatchSlot(index, field, value) { matchSlots[index][field] = value; renderMatchCards(); }
+
+    // Schedule a match (save pairing without a winner)
+    function scheduleMatch(index) {
+        const slot = matchSlots[index];
+        if (!slot.team1 || !slot.team2) return alert('Select both teams to schedule.');
+        if (slot.team1 === slot.team2) return alert('A team cannot play itself.');
+        const teamsPlayedToday = getTeamsPlayedToday();
+        const teamsScheduledToday = getTeamsScheduledToday();
+        if (teamsPlayedToday.has(slot.team1) || teamsScheduledToday.has(slot.team1)) return alert(`${slot.team1} already has a match today.`);
+        if (teamsPlayedToday.has(slot.team2) || teamsScheduledToday.has(slot.team2)) return alert(`${slot.team2} already has a match today.`);
+
+        const div = getCurrentDivision();
+        if (!div.scheduledMatches) div.scheduledMatches = [];
+        div.scheduledMatches.push({ day: currentDay, team1: slot.team1, team2: slot.team2 });
+        matchSlots.splice(index, 1);
+        saveAllData();
+        render();
+    }
+
+    // Record winner for a scheduled match — show scorecard form
+    function recordScheduledMatch(schedIdx, winner) {
+        if (!winner) return;
+        const div = getCurrentDivision();
+        const match = div.scheduledMatches[schedIdx];
+
+        // Show scorecard input inline
+        const container = document.getElementById('matchCards');
+        const allottedOvers = div.allottedOvers || 30; // default to 30 overs
+
+        container.innerHTML = `
+            <div class="section" style="margin:0;padding:1.2rem;background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border:2px solid #86efac;">
+                <h3 style="font-size:0.95rem;font-weight:700;color:#059669;margin-bottom:1rem;">Enter Scorecard: ${match.team1} vs ${match.team2}</h3>
+                <p style="font-size:0.8rem;color:#6b7280;margin-bottom:1rem;">Winner: <strong>${winner}</strong> | Allotted Overs: <input type="number" id="sc_allottedOvers" value="${allottedOvers}" style="width:70px;" min="1" step="1"></p>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>${match.team1} Runs</label>
+                        <input type="number" id="sc_t1Runs" placeholder="Runs" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>${match.team1} Overs (e.g. 18.4)</label>
+                        <input type="number" id="sc_t1Overs" placeholder="Overs.Balls" step="0.1" min="0">
+                    </div>
+                    <div class="form-group" style="align-self:flex-end;">
+                        <label><input type="checkbox" id="sc_t1AllOut"> All Out</label>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>${match.team2} Runs</label>
+                        <input type="number" id="sc_t2Runs" placeholder="Runs" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>${match.team2} Overs (e.g. 19.2)</label>
+                        <input type="number" id="sc_t2Overs" placeholder="Overs.Balls" step="0.1" min="0">
+                    </div>
+                    <div class="form-group" style="align-self:flex-end;">
+                        <label><input type="checkbox" id="sc_t2AllOut"> All Out</label>
+                    </div>
+                </div>
+                <div class="form-row" style="margin-bottom:0;">
+                    <button class="btn-success" onclick="submitScorecard(${schedIdx}, '${winner}')">✓ Submit Result</button>
+                    <button class="btn-secondary" onclick="render()">Cancel</button>
+                </div>
+            </div>
+        `;
+    }
+
+    function submitScorecard(schedIdx, winner) {
+        const div = getCurrentDivision();
+        const match = div.scheduledMatches[schedIdx];
+
+        const t1Runs = parseInt(document.getElementById('sc_t1Runs').value);
+        const t2Runs = parseInt(document.getElementById('sc_t2Runs').value);
+        const t1OversRaw = parseFloat(document.getElementById('sc_t1Overs').value);
+        const t2OversRaw = parseFloat(document.getElementById('sc_t2Overs').value);
+        const t1AllOut = document.getElementById('sc_t1AllOut').checked;
+        const t2AllOut = document.getElementById('sc_t2AllOut').checked;
+        const allottedOvers = parseFloat(document.getElementById('sc_allottedOvers').value) || 30;
+
+        if (isNaN(t1Runs) || isNaN(t2Runs) || isNaN(t1OversRaw) || isNaN(t2OversRaw)) {
+            return alert('Please fill in all scorecard fields.');
+        }
+
+        const t1Overs = oversToDecimal(t1OversRaw);
+        const t2Overs = oversToDecimal(t2OversRaw);
+
+        // Save allotted overs for the division
+        div.allottedOvers = allottedOvers;
+
+        // Build scorecard object
+        const scorecard = {
+            team1Runs: t1Runs, team1Overs: t1Overs, team1AllOut: t1AllOut,
+            team2Runs: t2Runs, team2Overs: t2Overs, team2AllOut: t2AllOut,
+            allottedOvers: allottedOvers
+        };
+
+        // Now do the rating calculation
+        const teams = getTeams();
+        const team1 = teams.find(t => t.name === match.team1);
+        const team2 = teams.find(t => t.name === match.team2);
+        const team1Wins = winner === match.team1;
+        const t1Before = team1.rating, t2Before = team2.rating;
+
+        const r1 = calculateNewRating(team1, t2Before, team1Wins);
+        const r2 = calculateNewRating(team2, t1Before, !team1Wins);
+
+        team1.rating = r1.newRating; team1.ratingNumeratorSum = r1.newNumeratorSum; team1.gamesPlayed = r1.newGamesPlayed;
+        if (team1Wins) team1.wins++; else team1.losses++;
+        team2.rating = r2.newRating; team2.ratingNumeratorSum = r2.newNumeratorSum; team2.gamesPlayed = r2.newGamesPlayed;
+        if (!team1Wins) team2.wins++; else team2.losses++;
+
+        const history = getMatchHistory();
+        let dayEntry = history.find(h => h.day === match.day);
+        if (!dayEntry) { dayEntry = { day: match.day, matches: [] }; history.push(dayEntry); }
+        dayEntry.matches.push({ team1: match.team1, team2: match.team2, winner, team1RatingBefore: t1Before, team2RatingBefore: t2Before, team1RatingAfter: team1.rating, team2RatingAfter: team2.rating, exception1: r1.exceptionApplied, exception2: r2.exceptionApplied, scorecard });
+
+        // Remove from scheduled
+        div.scheduledMatches.splice(schedIdx, 1);
+        saveAllData();
+        render();
+    }
+
+    // Delete a scheduled match
+    function deleteScheduledMatch(schedIdx) {
+        const div = getCurrentDivision();
+        const match = div.scheduledMatches[schedIdx];
+        if (!confirm(`Remove scheduled match: ${match.team1} vs ${match.team2}?`)) return;
+        div.scheduledMatches.splice(schedIdx, 1);
+        saveAllData();
+        render();
+    }
 
     // ===== POINTS CALCULATION =====
     function calculateNewRating(team, opponentRating, isWin) {
@@ -493,8 +634,77 @@
         if (!slot.team1 || !slot.team2 || !slot.winner) return alert('Select both teams and a winner.');
         if (slot.team1 === slot.team2) return alert('A team cannot play itself.');
         const teamsPlayedToday = getTeamsPlayedToday();
-        if (teamsPlayedToday.has(slot.team1)) return alert(`${slot.team1} already played today.`);
-        if (teamsPlayedToday.has(slot.team2)) return alert(`${slot.team2} already played today.`);
+        const teamsScheduledToday = getTeamsScheduledToday();
+        if (teamsPlayedToday.has(slot.team1) || teamsScheduledToday.has(slot.team1)) return alert(`${slot.team1} already has a match today.`);
+        if (teamsPlayedToday.has(slot.team2) || teamsScheduledToday.has(slot.team2)) return alert(`${slot.team2} already has a match today.`);
+
+        // Show scorecard form
+        const div = getCurrentDivision();
+        const allottedOvers = div.allottedOvers || 30;
+        const container = document.getElementById('matchCards');
+        container.innerHTML = `
+            <div class="section" style="margin:0;padding:1.2rem;background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border:2px solid #86efac;">
+                <h3 style="font-size:0.95rem;font-weight:700;color:#059669;margin-bottom:1rem;">Enter Scorecard: ${slot.team1} vs ${slot.team2}</h3>
+                <p style="font-size:0.8rem;color:#6b7280;margin-bottom:1rem;">Winner: <strong>${slot.winner}</strong> | Allotted Overs: <input type="number" id="sc_allottedOvers" value="${allottedOvers}" style="width:70px;" min="1" step="1"></p>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>${slot.team1} Runs</label>
+                        <input type="number" id="sc_t1Runs" placeholder="Runs" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>${slot.team1} Overs (e.g. 18.4)</label>
+                        <input type="number" id="sc_t1Overs" placeholder="Overs.Balls" step="0.1" min="0">
+                    </div>
+                    <div class="form-group" style="align-self:flex-end;">
+                        <label><input type="checkbox" id="sc_t1AllOut"> All Out</label>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>${slot.team2} Runs</label>
+                        <input type="number" id="sc_t2Runs" placeholder="Runs" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>${slot.team2} Overs (e.g. 19.2)</label>
+                        <input type="number" id="sc_t2Overs" placeholder="Overs.Balls" step="0.1" min="0">
+                    </div>
+                    <div class="form-group" style="align-self:flex-end;">
+                        <label><input type="checkbox" id="sc_t2AllOut"> All Out</label>
+                    </div>
+                </div>
+                <div class="form-row" style="margin-bottom:0;">
+                    <button class="btn-success" onclick="submitDirectMatch(${index})">✓ Submit Result</button>
+                    <button class="btn-secondary" onclick="render()">Cancel</button>
+                </div>
+            </div>
+        `;
+    }
+
+    function submitDirectMatch(index) {
+        const slot = matchSlots[index];
+        const div = getCurrentDivision();
+
+        const t1Runs = parseInt(document.getElementById('sc_t1Runs').value);
+        const t2Runs = parseInt(document.getElementById('sc_t2Runs').value);
+        const t1OversRaw = parseFloat(document.getElementById('sc_t1Overs').value);
+        const t2OversRaw = parseFloat(document.getElementById('sc_t2Overs').value);
+        const t1AllOut = document.getElementById('sc_t1AllOut').checked;
+        const t2AllOut = document.getElementById('sc_t2AllOut').checked;
+        const allottedOvers = parseFloat(document.getElementById('sc_allottedOvers').value) || 30;
+
+        if (isNaN(t1Runs) || isNaN(t2Runs) || isNaN(t1OversRaw) || isNaN(t2OversRaw)) {
+            return alert('Please fill in all scorecard fields.');
+        }
+
+        const t1Overs = oversToDecimal(t1OversRaw);
+        const t2Overs = oversToDecimal(t2OversRaw);
+        div.allottedOvers = allottedOvers;
+
+        const scorecard = {
+            team1Runs: t1Runs, team1Overs: t1Overs, team1AllOut: t1AllOut,
+            team2Runs: t2Runs, team2Overs: t2Overs, team2AllOut: t2AllOut,
+            allottedOvers: allottedOvers
+        };
 
         const teams = getTeams();
         const team1 = teams.find(t => t.name === slot.team1);
@@ -513,7 +723,7 @@
         const history = getMatchHistory();
         let dayEntry = history.find(h => h.day === currentDay);
         if (!dayEntry) { dayEntry = { day: currentDay, matches: [] }; history.push(dayEntry); }
-        dayEntry.matches.push({ team1: slot.team1, team2: slot.team2, winner: slot.winner, team1RatingBefore: t1Before, team2RatingBefore: t2Before, team1RatingAfter: team1.rating, team2RatingAfter: team2.rating, exception1: r1.exceptionApplied, exception2: r2.exceptionApplied });
+        dayEntry.matches.push({ team1: slot.team1, team2: slot.team2, winner: slot.winner, team1RatingBefore: t1Before, team2RatingBefore: t2Before, team1RatingAfter: team1.rating, team2RatingAfter: team2.rating, exception1: r1.exceptionApplied, exception2: r2.exceptionApplied, scorecard });
 
         matchSlots.splice(index, 1);
         saveAllData();
@@ -526,9 +736,15 @@
         if (!dayEntry) return;
         const match = dayEntry.matches[matchIndex];
         const loser = match.winner === match.team1 ? match.team2 : match.team1;
-        if (!confirm(`Delete match: ${match.winner} defeated ${loser}?`)) return;
-        dayEntry.matches.splice(matchIndex, 1);
+        if (!confirm(`Undo result: ${match.winner} defeated ${loser}? Match will be moved back to scheduled.`)) return;
+
+        // Move back to scheduled matches
         const div = getCurrentDivision();
+        if (!div.scheduledMatches) div.scheduledMatches = [];
+        div.scheduledMatches.push({ day: day, team1: match.team1, team2: match.team2 });
+
+        // Remove from completed history
+        dayEntry.matches.splice(matchIndex, 1);
         div.matchHistory = history.filter(h => h.matches.length > 0);
         recalculateAllRatings();
         saveAllData();
@@ -584,8 +800,76 @@
         if (teams.length === 0) { body.innerHTML = ''; empty.style.display = 'block'; document.querySelector('.table-wrapper').style.display = 'none'; return; }
         empty.style.display = 'none';
         document.querySelector('.table-wrapper').style.display = 'block';
+
+        // Calculate NRR for each team
+        const nrrMap = calculateAllNRR();
         const sorted = [...teams].sort((a, b) => b.rating - a.rating);
-        body.innerHTML = sorted.map((t, i) => `<tr><td class="rank-cell">${i+1}</td><td class="team-name-cell">${t.name}</td><td class="points-cell">${t.rating}</td><td>${t.wins}</td><td>${t.losses}</td><td><button class="remove-btn" onclick="removeTeam(${teams.indexOf(t)})">✕</button></td></tr>`).join('');
+        body.innerHTML = sorted.map((t, i) => {
+            const nrr = nrrMap[t.name];
+            const nrrStr = nrr !== null ? (nrr >= 0 ? '+' : '') + nrr.toFixed(3) : '—';
+            const nrrColor = nrr === null ? '#9ca3af' : (nrr >= 0 ? '#059669' : '#dc2626');
+            return `<tr><td class="rank-cell">${i+1}</td><td class="team-name-cell">${t.name}</td><td class="points-cell">${t.rating}</td><td>${t.wins}</td><td>${t.losses}</td><td style="font-weight:600;color:${nrrColor};font-size:0.85rem;">${nrrStr}</td><td><button class="remove-btn" onclick="removeTeam(${teams.indexOf(t)})">✕</button></td></tr>`;
+        }).join('');
+    }
+
+    // Calculate NRR for all teams from match history
+    function calculateAllNRR() {
+        const div = getCurrentDivision();
+        const teams = getTeams();
+        const nrrData = {};
+        teams.forEach(t => { nrrData[t.name] = { totalRunsScored: 0, totalOversFaced: 0, totalRunsConceded: 0, totalOversBowled: 0 }; });
+
+        if (!div || !div.matchHistory) return Object.fromEntries(teams.map(t => [t.name, null]));
+
+        div.matchHistory.forEach(dayEntry => {
+            dayEntry.matches.forEach(match => {
+                if (!match.scorecard) return; // Skip matches without scorecard data
+                const sc = match.scorecard;
+                const t1 = nrrData[match.team1];
+                const t2 = nrrData[match.team2];
+                if (!t1 || !t2) return;
+
+                // Team 1 batting: scored sc.team1Runs in sc.team1Overs
+                // If all out, use allotted overs instead
+                const t1OversFaced = sc.team1AllOut ? sc.allottedOvers : sc.team1Overs;
+                const t2OversFaced = sc.team2AllOut ? sc.allottedOvers : sc.team2Overs;
+
+                // Team 1 perspective
+                t1.totalRunsScored += sc.team1Runs;
+                t1.totalOversFaced += t1OversFaced;
+                t1.totalRunsConceded += sc.team2Runs;
+                t1.totalOversBowled += t2OversFaced;
+
+                // Team 2 perspective
+                t2.totalRunsScored += sc.team2Runs;
+                t2.totalOversFaced += t2OversFaced;
+                t2.totalRunsConceded += sc.team1Runs;
+                t2.totalOversBowled += t1OversFaced;
+            });
+        });
+
+        const result = {};
+        teams.forEach(t => {
+            const d = nrrData[t.name];
+            if (d.totalOversFaced === 0 || d.totalOversBowled === 0) {
+                result[t.name] = null;
+            } else {
+                result[t.name] = (d.totalRunsScored / d.totalOversFaced) - (d.totalRunsConceded / d.totalOversBowled);
+            }
+        });
+        return result;
+    }
+
+    // Convert overs.balls format (e.g., 15.3) to decimal overs (e.g., 15.5)
+    function oversToDecimal(overs) {
+        const str = String(overs);
+        if (str.includes('.')) {
+            const parts = str.split('.');
+            const wholeOvers = parseInt(parts[0]);
+            const balls = parseInt(parts[1]);
+            return wholeOvers + (balls / 6);
+        }
+        return parseFloat(overs);
     }
 
     function renderDaySelector() {
@@ -595,19 +879,57 @@
     function renderMatchCards() {
         const container = document.getElementById('matchCards');
         const teams = getTeams();
-        if (matchSlots.length === 0) { container.innerHTML = '<div class="empty-state">Click "+ Add Match" to set up matches for this day.</div>'; return; }
         const teamsPlayedToday = getTeamsPlayedToday();
-        container.innerHTML = matchSlots.map((slot, i) => {
-            const pending = getTeamsInPendingSlots(i);
-            const avail1 = teams.filter(t => !teamsPlayedToday.has(t.name) && (!pending.has(t.name) || t.name === slot.team1) && t.name !== slot.team2);
-            const avail2 = teams.filter(t => !teamsPlayedToday.has(t.name) && (!pending.has(t.name) || t.name === slot.team2) && t.name !== slot.team1);
-            const opts1 = avail1.map(t => `<option value="${t.name}" ${slot.team1===t.name?'selected':''}>${t.name} (${t.rating})</option>`).join('');
-            const opts2 = avail2.map(t => `<option value="${t.name}" ${slot.team2===t.name?'selected':''}>${t.name} (${t.rating})</option>`).join('');
-            const wOpts = [];
-            if (slot.team1) wOpts.push(`<option value="${slot.team1}" ${slot.winner===slot.team1?'selected':''}>${slot.team1}</option>`);
-            if (slot.team2) wOpts.push(`<option value="${slot.team2}" ${slot.winner===slot.team2?'selected':''}>${slot.team2}</option>`);
-            return `<div class="match-card"><select onchange="updateMatchSlot(${i},'team1',this.value)"><option value="">Team 1</option>${opts1}</select><span class="vs-label">VS</span><select onchange="updateMatchSlot(${i},'team2',this.value)"><option value="">Team 2</option>${opts2}</select><select class="winner-select" onchange="updateMatchSlot(${i},'winner',this.value)"><option value="">Winner</option>${wOpts.join('')}</select><div class="match-card-actions"><button class="btn-success btn-sm" onclick="recordMatch(${i})">✓ Record</button><button class="btn-danger btn-sm" onclick="removeMatch(${i})">✕</button></div></div>`;
-        }).join('');
+        const teamsScheduledToday = getTeamsScheduledToday();
+        const unavailable = new Set([...teamsPlayedToday, ...teamsScheduledToday]);
+
+        // Render scheduled matches first (awaiting results)
+        const div = getCurrentDivision();
+        const scheduledToday = (div && div.scheduledMatches) ? div.scheduledMatches.map((m, origIdx) => ({...m, origIdx})).filter(m => m.day === currentDay) : [];
+
+        let html = '';
+        if (scheduledToday.length > 0) {
+            html += '<h3 style="font-size:0.9rem;font-weight:700;color:#d97706;margin-bottom:0.6rem;">Scheduled Matches (awaiting result)</h3>';
+            html += scheduledToday.map(m => {
+                const t1 = teams.find(t => t.name === m.team1);
+                const t2 = teams.find(t => t.name === m.team2);
+                const r1 = t1 ? t1.rating : '?';
+                const r2 = t2 ? t2.rating : '?';
+                return `<div class="match-card" style="border-color:#fbbf24;background:linear-gradient(135deg,#fffbeb,#fef3c7);">
+                    <span class="result-text" style="font-weight:600;">${m.team1} (${r1})</span>
+                    <span class="vs-label">VS</span>
+                    <span class="result-text" style="font-weight:600;">${m.team2} (${r2})</span>
+                    <select class="winner-select" onchange="recordScheduledMatch(${m.origIdx}, this.value)">
+                        <option value="">Select Winner</option>
+                        <option value="${m.team1}">${m.team1}</option>
+                        <option value="${m.team2}">${m.team2}</option>
+                    </select>
+                    <button class="btn-danger btn-sm" onclick="deleteScheduledMatch(${m.origIdx})">✕</button>
+                </div>`;
+            }).join('');
+        }
+
+        // Render new match slots
+        if (matchSlots.length === 0 && scheduledToday.length === 0) {
+            container.innerHTML = '<div class="empty-state">Click "+ Add Match" to set up matches for this day.</div>';
+            return;
+        }
+
+        if (matchSlots.length > 0) {
+            html += matchSlots.map((slot, i) => {
+                const pending = getTeamsInPendingSlots(i);
+                const avail1 = teams.filter(t => !unavailable.has(t.name) && (!pending.has(t.name) || t.name === slot.team1) && t.name !== slot.team2);
+                const avail2 = teams.filter(t => !unavailable.has(t.name) && (!pending.has(t.name) || t.name === slot.team2) && t.name !== slot.team1);
+                const opts1 = avail1.map(t => `<option value="${t.name}" ${slot.team1===t.name?'selected':''}>${t.name} (${t.rating})</option>`).join('');
+                const opts2 = avail2.map(t => `<option value="${t.name}" ${slot.team2===t.name?'selected':''}>${t.name} (${t.rating})</option>`).join('');
+                const wOpts = [];
+                if (slot.team1) wOpts.push(`<option value="${slot.team1}" ${slot.winner===slot.team1?'selected':''}>${slot.team1}</option>`);
+                if (slot.team2) wOpts.push(`<option value="${slot.team2}" ${slot.winner===slot.team2?'selected':''}>${slot.team2}</option>`);
+                return `<div class="match-card"><select onchange="updateMatchSlot(${i},'team1',this.value)"><option value="">Team 1</option>${opts1}</select><span class="vs-label">VS</span><select onchange="updateMatchSlot(${i},'team2',this.value)"><option value="">Team 2</option>${opts2}</select><select class="winner-select" onchange="updateMatchSlot(${i},'winner',this.value)"><option value="">Winner</option>${wOpts.join('')}</select><div class="match-card-actions"><button class="btn-success btn-sm" onclick="recordMatch(${i})">✓ Record</button><button class="btn-warning btn-sm" onclick="scheduleMatch(${i})">📅 Schedule</button><button class="btn-danger btn-sm" onclick="removeMatch(${i})">✕</button></div></div>`;
+            }).join('');
+        }
+
+        container.innerHTML = html;
     }
 
     function renderDayResults() {
@@ -625,7 +947,9 @@
                 const exW = m.winner===m.team1?m.exception1:m.exception2;
                 const exL = m.winner===m.team1?m.exception2:m.exception1;
                 let exNote = (exW||exL) ? `<div class="exception-note">⚠️ Exception (>100 pts gap): rating held for ${exW?m.winner:loser}</div>` : '';
-                return `<div class="match-result"><span class="result-text"><span class="winner-badge">WIN</span> ${m.winner} (${wB}→${wA})</span><span class="result-text" style="color:#6b7280">defeated</span><span class="result-text">${loser} (${lB}→${lA})</span><button class="btn-danger btn-sm" onclick="deleteMatch(${currentDay},${idx})">🗑 Undo</button></div>${exNote}`;
+                const hasScore = m.scorecard ? true : false;
+                const scoreBtn = hasScore ? `<button class="btn-secondary btn-sm" onclick="viewScore(${currentDay},${idx})">📊 Score</button><button class="btn-warning btn-sm" onclick="editScore(${currentDay},${idx})">✏️ Edit</button>` : `<button class="btn-warning btn-sm" onclick="editScore(${currentDay},${idx})">+ Score</button>`;
+                return `<div class="match-result"><span class="result-text"><span class="winner-badge">WIN</span> ${m.winner} (${wB}→${wA})</span><span class="result-text" style="color:#6b7280">defeated</span><span class="result-text">${loser} (${lB}→${lA})</span><span class="match-card-actions">${scoreBtn}<button class="btn-danger btn-sm" onclick="deleteMatch(${currentDay},${idx})">🗑 Undo</button></span></div>${exNote}`;
             }).join('');
     }
 
@@ -641,9 +965,129 @@
                 const wA = m.winner===m.team1?m.team1RatingAfter:m.team2RatingAfter;
                 const lB = m.winner===m.team1?m.team2RatingBefore:m.team1RatingBefore;
                 const lA = m.winner===m.team1?m.team2RatingAfter:m.team1RatingAfter;
-                return `<div class="match-result"><span class="result-text"><span class="winner-badge">WIN</span> ${m.winner} (${wB}→${wA})</span><span class="result-text" style="color:#6b7280">def.</span><span class="result-text">${loser} (${lB}→${lA})</span><button class="btn-danger btn-sm" onclick="deleteMatch(${dayEntry.day},${idx})">🗑 Undo</button></div>`;
+                const hasScore = m.scorecard ? true : false;
+                const scoreBtn = hasScore ? `<button class="btn-secondary btn-sm" onclick="viewScore(${dayEntry.day},${idx})">📊</button><button class="btn-warning btn-sm" onclick="editScore(${dayEntry.day},${idx})">✏️</button>` : `<button class="btn-warning btn-sm" onclick="editScore(${dayEntry.day},${idx})">+📊</button>`;
+                return `<div class="match-result"><span class="result-text"><span class="winner-badge">WIN</span> ${m.winner} (${wB}→${wA})</span><span class="result-text" style="color:#6b7280">def.</span><span class="result-text">${loser} (${lB}→${lA})</span><span class="match-card-actions">${scoreBtn}<button class="btn-danger btn-sm" onclick="deleteMatch(${dayEntry.day},${idx})">🗑 Undo</button></span></div>`;
             }).join('')}</div>`;
         }).join('');
+    }
+
+    // View scorecard for a completed match
+    function viewScore(day, matchIndex) {
+        const history = getMatchHistory();
+        const dayEntry = history.find(h => h.day === day);
+        const match = dayEntry.matches[matchIndex];
+        if (!match.scorecard) return alert('No scorecard data for this match.');
+        const sc = match.scorecard;
+        const t1OversDisplay = decimalToOvers(sc.team1Overs);
+        const t2OversDisplay = decimalToOvers(sc.team2Overs);
+        const container = document.getElementById('dayResults');
+        container.innerHTML += `
+            <div class="section" style="margin-top:0.8rem;padding:1rem;background:linear-gradient(135deg,#eff6ff,#dbeafe);border:1px solid #93c5fd;">
+                <h3 style="font-size:0.9rem;font-weight:700;color:#1d4ed8;margin-bottom:0.8rem;">📊 Scorecard: ${match.team1} vs ${match.team2}</h3>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.8rem;">
+                    <div style="background:white;padding:0.7rem;border-radius:8px;border:1px solid #e5e7eb;">
+                        <div style="font-weight:700;font-size:0.85rem;margin-bottom:0.3rem;">${match.team1}${match.winner===match.team1?' ✓':''}</div>
+                        <div style="font-size:1.1rem;font-weight:800;color:#1f2937;">${sc.team1Runs}/${sc.team1AllOut?'All Out':'?'}</div>
+                        <div style="font-size:0.8rem;color:#6b7280;">${t1OversDisplay} overs${sc.team1AllOut?' (All Out)':''}</div>
+                    </div>
+                    <div style="background:white;padding:0.7rem;border-radius:8px;border:1px solid #e5e7eb;">
+                        <div style="font-weight:700;font-size:0.85rem;margin-bottom:0.3rem;">${match.team2}${match.winner===match.team2?' ✓':''}</div>
+                        <div style="font-size:1.1rem;font-weight:800;color:#1f2937;">${sc.team2Runs}/${sc.team2AllOut?'All Out':'?'}</div>
+                        <div style="font-size:0.8rem;color:#6b7280;">${t2OversDisplay} overs${sc.team2AllOut?' (All Out)':''}</div>
+                    </div>
+                </div>
+                <p style="font-size:0.75rem;color:#6b7280;margin-top:0.5rem;">Allotted: ${sc.allottedOvers} overs</p>
+                <button class="btn-secondary btn-sm" onclick="render()" style="margin-top:0.5rem;">Close</button>
+            </div>
+        `;
+    }
+
+    // Edit scorecard for a completed match
+    function editScore(day, matchIndex) {
+        const history = getMatchHistory();
+        const dayEntry = history.find(h => h.day === day);
+        const match = dayEntry.matches[matchIndex];
+        const div = getCurrentDivision();
+        const sc = match.scorecard || {};
+        const allottedOvers = sc.allottedOvers || div.allottedOvers || 30;
+        const t1Overs = sc.team1Overs ? decimalToOvers(sc.team1Overs) : '';
+        const t2Overs = sc.team2Overs ? decimalToOvers(sc.team2Overs) : '';
+
+        const container = document.getElementById('dayResults');
+        container.innerHTML = `
+            <div class="section" style="margin:0;padding:1.2rem;background:linear-gradient(135deg,#eff6ff,#dbeafe);border:2px solid #60a5fa;">
+                <h3 style="font-size:0.95rem;font-weight:700;color:#1d4ed8;margin-bottom:1rem;">✏️ Edit Scorecard: ${match.team1} vs ${match.team2}</h3>
+                <p style="font-size:0.8rem;color:#6b7280;margin-bottom:1rem;">Winner: <strong>${match.winner}</strong> | Allotted Overs: <input type="number" id="esc_allottedOvers" value="${allottedOvers}" style="width:70px;" min="1" step="1"></p>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>${match.team1} Runs</label>
+                        <input type="number" id="esc_t1Runs" value="${sc.team1Runs||''}" placeholder="Runs" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>${match.team1} Overs</label>
+                        <input type="number" id="esc_t1Overs" value="${t1Overs}" placeholder="e.g. 18.4" step="0.1" min="0">
+                    </div>
+                    <div class="form-group" style="align-self:flex-end;">
+                        <label><input type="checkbox" id="esc_t1AllOut" ${sc.team1AllOut?'checked':''}> All Out</label>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>${match.team2} Runs</label>
+                        <input type="number" id="esc_t2Runs" value="${sc.team2Runs||''}" placeholder="Runs" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>${match.team2} Overs</label>
+                        <input type="number" id="esc_t2Overs" value="${t2Overs}" placeholder="e.g. 19.2" step="0.1" min="0">
+                    </div>
+                    <div class="form-group" style="align-self:flex-end;">
+                        <label><input type="checkbox" id="esc_t2AllOut" ${sc.team2AllOut?'checked':''}> All Out</label>
+                    </div>
+                </div>
+                <div class="form-row" style="margin-bottom:0;">
+                    <button class="btn-success" onclick="saveEditedScore(${day},${matchIndex})">✓ Save</button>
+                    <button class="btn-secondary" onclick="render()">Cancel</button>
+                </div>
+            </div>
+        `;
+    }
+
+    function saveEditedScore(day, matchIndex) {
+        const history = getMatchHistory();
+        const dayEntry = history.find(h => h.day === day);
+        const match = dayEntry.matches[matchIndex];
+
+        const t1Runs = parseInt(document.getElementById('esc_t1Runs').value);
+        const t2Runs = parseInt(document.getElementById('esc_t2Runs').value);
+        const t1OversRaw = parseFloat(document.getElementById('esc_t1Overs').value);
+        const t2OversRaw = parseFloat(document.getElementById('esc_t2Overs').value);
+        const t1AllOut = document.getElementById('esc_t1AllOut').checked;
+        const t2AllOut = document.getElementById('esc_t2AllOut').checked;
+        const allottedOvers = parseFloat(document.getElementById('esc_allottedOvers').value) || 30;
+
+        if (isNaN(t1Runs) || isNaN(t2Runs) || isNaN(t1OversRaw) || isNaN(t2OversRaw)) {
+            return alert('Please fill in all scorecard fields.');
+        }
+
+        match.scorecard = {
+            team1Runs: t1Runs, team1Overs: oversToDecimal(t1OversRaw), team1AllOut: t1AllOut,
+            team2Runs: t2Runs, team2Overs: oversToDecimal(t2OversRaw), team2AllOut: t2AllOut,
+            allottedOvers: allottedOvers
+        };
+
+        const div = getCurrentDivision();
+        div.allottedOvers = allottedOvers;
+        saveAllData();
+        render();
+    }
+
+    // Convert decimal overs back to cricket format for display (e.g., 15.5 → 15.3)
+    function decimalToOvers(decimal) {
+        const wholeOvers = Math.floor(decimal);
+        const balls = Math.round((decimal - wholeOvers) * 6);
+        if (balls === 0) return String(wholeOvers);
+        return wholeOvers + '.' + balls;
     }
 
     // ===== IMPORT / EXPORT =====
