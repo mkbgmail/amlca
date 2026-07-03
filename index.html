@@ -158,6 +158,20 @@
             .section { padding: 1rem; }
             th, td { padding: 0.45rem 0.4rem; font-size: 0.78rem; }
         }
+
+        /* Confirm modal (works in iframes where confirm() is blocked) */
+        .confirm-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;
+            z-index: 9999; padding: 1rem;
+        }
+        .confirm-box {
+            background: white; border-radius: 14px; padding: 1.5rem; max-width: 380px; width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3); text-align: center;
+        }
+        .confirm-box p { font-size: 0.95rem; color: #1f2937; margin-bottom: 1.2rem; line-height: 1.4; }
+        .confirm-box .confirm-actions { display: flex; gap: 0.6rem; justify-content: center; }
+        .confirm-box .confirm-actions button { flex: 1; min-height: 42px; }
     </style>
 </head>
 <body>
@@ -252,6 +266,26 @@
     </div>
 
     <script>
+    // ===== CUSTOM CONFIRM (works inside iframes where confirm() is blocked) =====
+    function customConfirm(message) {
+        return new Promise((resolve) => {
+            const overlay = document.createElement('div');
+            overlay.className = 'confirm-overlay';
+            overlay.innerHTML = `
+                <div class="confirm-box">
+                    <p>${message}</p>
+                    <div class="confirm-actions">
+                        <button class="btn-secondary" id="confirmNo">Cancel</button>
+                        <button class="btn-danger" id="confirmYes">Confirm</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+            overlay.querySelector('#confirmYes').onclick = () => { document.body.removeChild(overlay); resolve(true); };
+            overlay.querySelector('#confirmNo').onclick = () => { document.body.removeChild(overlay); resolve(false); };
+        });
+    }
+
     // ===== DATA STRUCTURE =====
     // allData = { tournaments: [ { name, divisions: [ { name, teams, matchHistory } ] } ] }
     // Active state pointers
@@ -325,10 +359,10 @@
         render();
     }
 
-    function deleteTournament() {
+    async function deleteTournament() {
         if (currentTournamentIndex < 0) return alert('No tournament selected.');
         const name = allData.tournaments[currentTournamentIndex].name;
-        if (!confirm(`Delete tournament "${name}" and all its divisions? This cannot be undone.`)) return;
+        if (!await customConfirm(`Delete tournament "${name}" and all its divisions? This cannot be undone.`)) return;
         allData.tournaments.splice(currentTournamentIndex, 1);
         currentTournamentIndex = allData.tournaments.length > 0 ? 0 : -1;
         currentDivisionIndex = -1;
@@ -340,10 +374,10 @@
         render();
     }
 
-    function deleteDivision() {
+    async function deleteDivision() {
         if (currentDivisionIndex < 0) return alert('No division selected.');
         const div = getCurrentDivision();
-        if (!confirm(`Delete division "${div.name}"? This cannot be undone.`)) return;
+        if (!await customConfirm(`Delete division "${div.name}"? This cannot be undone.`)) return;
         const tournament = allData.tournaments[currentTournamentIndex];
         tournament.divisions.splice(currentDivisionIndex, 1);
         currentDivisionIndex = tournament.divisions.length > 0 ? 0 : -1;
@@ -597,10 +631,10 @@
     }
 
     // Delete a scheduled match
-    function deleteScheduledMatch(schedIdx) {
+    async function deleteScheduledMatch(schedIdx) {
         const div = getCurrentDivision();
         const match = div.scheduledMatches[schedIdx];
-        if (!confirm(`Remove scheduled match: ${match.team1} vs ${match.team2}?`)) return;
+        if (!await customConfirm(`Remove scheduled match: ${match.team1} vs ${match.team2}?`)) return;
         div.scheduledMatches.splice(schedIdx, 1);
         saveAllData();
         render();
@@ -730,13 +764,13 @@
         render();
     }
 
-    function deleteMatch(day, matchIndex) {
+    async function deleteMatch(day, matchIndex) {
         const history = getMatchHistory();
         const dayEntry = history.find(h => h.day === day);
         if (!dayEntry) return;
         const match = dayEntry.matches[matchIndex];
         const loser = match.winner === match.team1 ? match.team2 : match.team1;
-        if (!confirm(`Undo result: ${match.winner} defeated ${loser}? Match will be moved back to scheduled.`)) return;
+        if (!await customConfirm(`Undo result: ${match.winner} defeated ${loser}? Match will be moved back to scheduled.`)) return;
 
         // Move back to scheduled matches
         const div = getCurrentDivision();
@@ -1107,14 +1141,14 @@
             const file = e.target.files[0];
             if (!file) return;
             const reader = new FileReader();
-            reader.onload = function(ev) {
+            reader.onload = async function(ev) {
                 try {
                     const data = JSON.parse(ev.target.result);
                     if (!data.name || !data.teams) throw new Error('Invalid division format');
                     const tournament = allData.tournaments[currentTournamentIndex];
                     const existingIdx = tournament.divisions.findIndex(d => d.name.toLowerCase() === data.name.toLowerCase());
                     if (existingIdx >= 0) {
-                        if (!confirm(`Division "${data.name}" exists. Overwrite?`)) return;
+                        if (!await customConfirm(`Division "${data.name}" exists. Overwrite?`)) return;
                         tournament.divisions[existingIdx] = JSON.parse(JSON.stringify(data));
                         currentDivisionIndex = existingIdx;
                     } else {
@@ -1148,7 +1182,6 @@
                 try {
                     const data = JSON.parse(ev.target.result);
                     if (!data.tournaments) throw new Error('Invalid format: missing tournaments array');
-                    if (!confirm('This will replace ALL tournament data. Continue?')) return;
                     allData = JSON.parse(JSON.stringify(data));
                     currentTournamentIndex = allData.tournaments.length > 0 ? 0 : -1;
                     currentDivisionIndex = (currentTournamentIndex >= 0 && allData.tournaments[0].divisions.length > 0) ? 0 : -1;
