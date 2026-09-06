@@ -207,7 +207,7 @@
             <div class="divider"></div>
             <div class="form-row" style="margin-bottom:0;">
                 <button class="btn-warning" onclick="exportAllData()">💾 Export All Tournaments</button>
-                <button class="btn-warning" onclick="importAllData()">📂 Import All Tournaments</button>
+                <label class="btn-warning" style="padding:0.6rem 1.3rem;border-radius:10px;font-size:0.85rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:0.4rem;justify-content:center;">📂 Import All Tournaments<input type="file" accept=".json" style="display:none;" onchange="handleImportAll(event)"></label>
             </div>
         </div>
 
@@ -228,7 +228,7 @@
             <div id="standingsTableContainer">
                 <div class="table-wrapper">
                     <table>
-                        <thead><tr><th>#</th><th>Team</th><th>Rating</th><th>W</th><th>L</th><th>NRR</th><th></th></tr></thead>
+                        <thead><tr><th>#</th><th>Team</th><th>Pts</th><th>Rating</th><th>W</th><th>L</th><th>NR</th><th>NRR</th><th></th></tr></thead>
                         <tbody id="standingsBody"></tbody>
                     </table>
                 </div>
@@ -261,7 +261,7 @@
         <!-- Actions -->
         <div class="actions-bar" id="actionsBar" style="display:none;">
             <button class="btn-secondary" onclick="exportDivision()">📥 Export Division</button>
-            <button class="btn-secondary" onclick="importDivision()">📤 Import Division</button>
+            <label class="btn-secondary" style="padding:0.6rem 1.3rem;border-radius:10px;font-size:0.85rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:0.4rem;justify-content:center;">📤 Import Division<input type="file" accept=".json" style="display:none;" onchange="handleImportDivision(event)"></label>
         </div>
     </div>
 
@@ -444,7 +444,7 @@
         if (div.teams.find(t => t.name.toLowerCase() === name.toLowerCase())) return alert('Team already exists.');
         if (div.teams.length >= 20) return alert('Maximum 20 teams allowed.');
 
-        div.teams.push({ name, rating, initialRating: rating, wins: 0, losses: 0, gamesPlayed: 0, ratingNumeratorSum: rating });
+        div.teams.push({ name, rating, initialRating: rating, wins: 0, losses: 0, noResults: 0, gamesPlayed: 0, ratingNumeratorSum: rating });
         nameInput.value = '';
         ratingInput.value = '2000';
         saveAllData();
@@ -640,6 +640,54 @@
         render();
     }
 
+    // Abandon a scheduled match — recorded as No Result (no rating change, 1 point each)
+    async function abandonScheduledMatch(schedIdx) {
+        const div = getCurrentDivision();
+        const match = div.scheduledMatches[schedIdx];
+        if (!await customConfirm(`Abandon match: ${match.team1} vs ${match.team2}? It will be recorded as No Result (no rating change, 1 point each).`)) return;
+        recordNoResult(match.day, match.team1, match.team2);
+        div.scheduledMatches.splice(schedIdx, 1);
+        saveAllData();
+        render();
+    }
+
+    // Abandon a match set up in a pending slot — recorded as No Result
+    async function abandonMatch(index) {
+        const slot = matchSlots[index];
+        if (!slot.team1 || !slot.team2) return alert('Select both teams to abandon a match.');
+        if (slot.team1 === slot.team2) return alert('A team cannot play itself.');
+        const teamsPlayedToday = getTeamsPlayedToday();
+        const teamsScheduledToday = getTeamsScheduledToday();
+        if (teamsPlayedToday.has(slot.team1) || teamsScheduledToday.has(slot.team1)) return alert(`${slot.team1} already has a match today.`);
+        if (teamsPlayedToday.has(slot.team2) || teamsScheduledToday.has(slot.team2)) return alert(`${slot.team2} already has a match today.`);
+        if (!await customConfirm(`Abandon match: ${slot.team1} vs ${slot.team2}? It will be recorded as No Result (no rating change, 1 point each).`)) return;
+        recordNoResult(currentDay, slot.team1, slot.team2);
+        matchSlots.splice(index, 1);
+        saveAllData();
+        render();
+    }
+
+    // Helper: record a No Result match (abandoned). No rating change; counts as no-result for both teams.
+    function recordNoResult(day, team1Name, team2Name) {
+        const teams = getTeams();
+        const team1 = teams.find(t => t.name === team1Name);
+        const team2 = teams.find(t => t.name === team2Name);
+        if (!team1 || !team2) return;
+        if (team1.noResults === undefined) team1.noResults = 0;
+        if (team2.noResults === undefined) team2.noResults = 0;
+        team1.noResults++;
+        team2.noResults++;
+        const history = getMatchHistory();
+        let dayEntry = history.find(h => h.day === day);
+        if (!dayEntry) { dayEntry = { day: day, matches: [] }; history.push(dayEntry); }
+        dayEntry.matches.push({
+            team1: team1Name, team2: team2Name, winner: null, noResult: true,
+            team1RatingBefore: team1.rating, team2RatingBefore: team2.rating,
+            team1RatingAfter: team1.rating, team2RatingAfter: team2.rating,
+            exception1: false, exception2: false
+        });
+    }
+
     // ===== POINTS CALCULATION =====
     function calculateNewRating(team, opponentRating, isWin) {
         const pointDiff = Math.abs(team.rating - opponentRating);
@@ -769,8 +817,10 @@
         const dayEntry = history.find(h => h.day === day);
         if (!dayEntry) return;
         const match = dayEntry.matches[matchIndex];
-        const loser = match.winner === match.team1 ? match.team2 : match.team1;
-        if (!await customConfirm(`Undo result: ${match.winner} defeated ${loser}? Match will be moved back to scheduled.`)) return;
+        const confirmMsg = match.noResult
+            ? `Undo No Result: ${match.team1} vs ${match.team2}? Match will be moved back to scheduled.`
+            : `Undo result: ${match.winner} defeated ${match.winner === match.team1 ? match.team2 : match.team1}? Match will be moved back to scheduled.`;
+        if (!await customConfirm(confirmMsg)) return;
 
         // Move back to scheduled matches
         const div = getCurrentDivision();
@@ -788,13 +838,22 @@
     function recalculateAllRatings() {
         const div = getCurrentDivision();
         if (!div) return;
-        div.teams.forEach(t => { t.rating = t.initialRating; t.ratingNumeratorSum = t.initialRating; t.gamesPlayed = 0; t.wins = 0; t.losses = 0; });
+        div.teams.forEach(t => { t.rating = t.initialRating; t.ratingNumeratorSum = t.initialRating; t.gamesPlayed = 0; t.wins = 0; t.losses = 0; t.noResults = 0; });
         const sortedDays = [...div.matchHistory].sort((a, b) => a.day - b.day);
         sortedDays.forEach(dayEntry => {
             dayEntry.matches.forEach(match => {
                 const team1 = div.teams.find(t => t.name === match.team1);
                 const team2 = div.teams.find(t => t.name === match.team2);
                 if (!team1 || !team2) return;
+                // No-result / abandoned match: no rating change, counts as a no-result for both
+                if (match.noResult) {
+                    team1.noResults++;
+                    team2.noResults++;
+                    match.team1RatingBefore = team1.rating; match.team2RatingBefore = team2.rating;
+                    match.team1RatingAfter = team1.rating; match.team2RatingAfter = team2.rating;
+                    match.exception1 = false; match.exception2 = false;
+                    return;
+                }
                 const team1Wins = match.winner === match.team1;
                 const t1Before = team1.rating, t2Before = team2.rating;
                 const r1 = calculateNewRating(team1, t2Before, team1Wins);
@@ -835,15 +894,58 @@
         empty.style.display = 'none';
         document.querySelector('.table-wrapper').style.display = 'block';
 
-        // Calculate NRR for each team
+        // Calculate NRR and championship points for each team
         const nrrMap = calculateAllNRR();
-        const sorted = [...teams].sort((a, b) => b.rating - a.rating);
+        const pointsMap = calculatePoints();
+
+        // Compute ranking: 1) most Points, 2) if points tie → higher Rating, 3) if rating also ties → higher NRR.
+        // Every team gets a distinct rank via this ordering.
+        const byPoints = [...teams].sort((a, b) => {
+            if (pointsMap[b.name] !== pointsMap[a.name]) return pointsMap[b.name] - pointsMap[a.name];
+            if (b.rating !== a.rating) return b.rating - a.rating;
+            const na = nrrMap[a.name] === null ? -Infinity : nrrMap[a.name];
+            const nb = nrrMap[b.name] === null ? -Infinity : nrrMap[b.name];
+            return nb - na;
+        });
+        const pointsRank = {};
+        byPoints.forEach((t, idx) => { pointsRank[t.name] = idx + 1; });
+
+        // Sort the table by Rating (desc), then points (desc), then NRR (desc)
+        const sorted = [...teams].sort((a, b) => {
+            if (b.rating !== a.rating) return b.rating - a.rating;
+            if (pointsMap[b.name] !== pointsMap[a.name]) return pointsMap[b.name] - pointsMap[a.name];
+            const na = nrrMap[a.name] === null ? -Infinity : nrrMap[a.name];
+            const nb = nrrMap[b.name] === null ? -Infinity : nrrMap[b.name];
+            return nb - na;
+        });
         body.innerHTML = sorted.map((t, i) => {
             const nrr = nrrMap[t.name];
             const nrrStr = nrr !== null ? (nrr >= 0 ? '+' : '') + nrr.toFixed(3) : '—';
             const nrrColor = nrr === null ? '#9ca3af' : (nrr >= 0 ? '#059669' : '#dc2626');
-            return `<tr><td class="rank-cell">${i+1}</td><td class="team-name-cell">${t.name}</td><td class="points-cell">${t.rating}</td><td>${t.wins}</td><td>${t.losses}</td><td style="font-weight:600;color:${nrrColor};font-size:0.85rem;">${nrrStr}</td><td><button class="remove-btn" onclick="removeTeam(${teams.indexOf(t)})">✕</button></td></tr>`;
+            const noResults = t.noResults || 0;
+            const pRank = pointsRank[t.name];
+            return `<tr><td class="rank-cell">${i+1}</td><td class="team-name-cell">${t.name} <span style="color:#7c3aed;font-weight:700;font-size:0.8rem;">(#${pRank})</span></td><td class="points-cell" style="color:#7c3aed;">${pointsMap[t.name]}</td><td style="color:#6b7280;">${t.rating}</td><td>${t.wins}</td><td>${t.losses}</td><td>${noResults}</td><td style="font-weight:600;color:${nrrColor};font-size:0.85rem;">${nrrStr}</td><td><button class="remove-btn" onclick="removeTeam(${teams.indexOf(t)})">✕</button></td></tr>`;
         }).join('');
+    }
+
+    // Calculate championship points: 2 for a win, 1 each for abandoned/no-result matches
+    function calculatePoints() {
+        const div = getCurrentDivision();
+        const teams = getTeams();
+        const points = {};
+        teams.forEach(t => { points[t.name] = 0; });
+        if (!div || !div.matchHistory) return points;
+        div.matchHistory.forEach(dayEntry => {
+            dayEntry.matches.forEach(match => {
+                if (match.noResult) {
+                    if (points[match.team1] !== undefined) points[match.team1] += 1;
+                    if (points[match.team2] !== undefined) points[match.team2] += 1;
+                } else if (match.winner && points[match.winner] !== undefined) {
+                    points[match.winner] += 2;
+                }
+            });
+        });
+        return points;
     }
 
     // Calculate NRR for all teams from match history
@@ -921,6 +1023,7 @@
         const div = getCurrentDivision();
         const scheduledToday = (div && div.scheduledMatches) ? div.scheduledMatches.map((m, origIdx) => ({...m, origIdx})).filter(m => m.day === currentDay) : [];
 
+        const pointsMap = calculatePoints();
         let html = '';
         if (scheduledToday.length > 0) {
             html += '<h3 style="font-size:0.9rem;font-weight:700;color:#d97706;margin-bottom:0.6rem;">Scheduled Matches (awaiting result)</h3>';
@@ -929,6 +1032,33 @@
                 const t2 = teams.find(t => t.name === m.team2);
                 const r1 = t1 ? t1.rating : '?';
                 const r2 = t2 ? t2.rating : '?';
+                // Simulation: projected total points if this team wins (current + 2), or +1 each on No Result
+                const p1 = pointsMap[m.team1] || 0;
+                const p2 = pointsMap[m.team2] || 0;
+                // Rating simulation using the same formula as a recorded match
+                let ratingSim = '';
+                if (t1 && t2) {
+                    // Scenario A: team1 wins
+                    const t1WinsR1 = calculateNewRating(t1, t2.rating, true);   // team1 rating if it wins
+                    const t1WinsR2 = calculateNewRating(t2, t1.rating, false);  // team2 rating if it loses
+                    // Scenario B: team2 wins
+                    const t2WinsR1 = calculateNewRating(t1, t2.rating, false);  // team1 rating if it loses
+                    const t2WinsR2 = calculateNewRating(t2, t1.rating, true);   // team2 rating if it wins
+                    const arrow = (before, after) => {
+                        const d = after - before;
+                        const col = d > 0 ? '#059669' : (d < 0 ? '#dc2626' : '#6b7280');
+                        const sign = d > 0 ? '+' : '';
+                        return `<span style="color:${col};">${before}→${after} (${sign}${d})</span>`;
+                    };
+                    ratingSim = `<div style="width:100%;font-size:0.72rem;color:#374151;background:rgba(255,255,255,0.75);border-radius:8px;padding:0.4rem 0.6rem;margin-top:0.2rem;">
+                        📈 Rating if <strong>${m.team1}</strong> wins: ${m.team1} ${arrow(t1.rating, t1WinsR1.newRating)}, ${m.team2} ${arrow(t2.rating, t1WinsR2.newRating)}<br>
+                        📈 Rating if <strong>${m.team2}</strong> wins: ${m.team1} ${arrow(t1.rating, t2WinsR1.newRating)}, ${m.team2} ${arrow(t2.rating, t2WinsR2.newRating)}<br>
+                        📈 No Result: ratings unchanged (${m.team1} ${t1.rating}, ${m.team2} ${t2.rating})
+                    </div>`;
+                }
+                const sim = `<div style="width:100%;font-size:0.75rem;color:#92400e;background:rgba(255,255,255,0.6);border-radius:8px;padding:0.4rem 0.6rem;margin-top:0.2rem;">
+                    🔮 Points if <strong>${m.team1}</strong> wins → <strong>${p1 + 2}</strong> (now ${p1}) · if <strong>${m.team2}</strong> wins → <strong>${p2 + 2}</strong> (now ${p2}) · No Result → ${m.team1} ${p1 + 1}, ${m.team2} ${p2 + 1}
+                </div>${ratingSim}`;
                 return `<div class="match-card" style="border-color:#fbbf24;background:linear-gradient(135deg,#fffbeb,#fef3c7);">
                     <span class="result-text" style="font-weight:600;">${m.team1} (${r1})</span>
                     <span class="vs-label">VS</span>
@@ -938,7 +1068,11 @@
                         <option value="${m.team1}">${m.team1}</option>
                         <option value="${m.team2}">${m.team2}</option>
                     </select>
-                    <button class="btn-danger btn-sm" onclick="deleteScheduledMatch(${m.origIdx})">✕</button>
+                    <div class="match-card-actions">
+                        <button class="btn-secondary btn-sm" onclick="abandonScheduledMatch(${m.origIdx})">🚫 Abandon</button>
+                        <button class="btn-danger btn-sm" onclick="deleteScheduledMatch(${m.origIdx})">✕</button>
+                    </div>
+                    ${sim}
                 </div>`;
             }).join('');
         }
@@ -959,7 +1093,7 @@
                 const wOpts = [];
                 if (slot.team1) wOpts.push(`<option value="${slot.team1}" ${slot.winner===slot.team1?'selected':''}>${slot.team1}</option>`);
                 if (slot.team2) wOpts.push(`<option value="${slot.team2}" ${slot.winner===slot.team2?'selected':''}>${slot.team2}</option>`);
-                return `<div class="match-card"><select onchange="updateMatchSlot(${i},'team1',this.value)"><option value="">Team 1</option>${opts1}</select><span class="vs-label">VS</span><select onchange="updateMatchSlot(${i},'team2',this.value)"><option value="">Team 2</option>${opts2}</select><select class="winner-select" onchange="updateMatchSlot(${i},'winner',this.value)"><option value="">Winner</option>${wOpts.join('')}</select><div class="match-card-actions"><button class="btn-success btn-sm" onclick="recordMatch(${i})">✓ Record</button><button class="btn-warning btn-sm" onclick="scheduleMatch(${i})">📅 Schedule</button><button class="btn-danger btn-sm" onclick="removeMatch(${i})">✕</button></div></div>`;
+                return `<div class="match-card"><select onchange="updateMatchSlot(${i},'team1',this.value)"><option value="">Team 1</option>${opts1}</select><span class="vs-label">VS</span><select onchange="updateMatchSlot(${i},'team2',this.value)"><option value="">Team 2</option>${opts2}</select><select class="winner-select" onchange="updateMatchSlot(${i},'winner',this.value)"><option value="">Winner</option>${wOpts.join('')}</select><div class="match-card-actions"><button class="btn-success btn-sm" onclick="recordMatch(${i})">✓ Record</button><button class="btn-warning btn-sm" onclick="scheduleMatch(${i})">📅 Schedule</button><button class="btn-secondary btn-sm" onclick="abandonMatch(${i})">🚫 Abandon</button><button class="btn-danger btn-sm" onclick="removeMatch(${i})">✕</button></div></div>`;
             }).join('');
         }
 
@@ -973,6 +1107,9 @@
         if (!dayEntry || dayEntry.matches.length === 0) { container.innerHTML = ''; return; }
         container.innerHTML = '<h3 style="font-size:0.9rem;font-weight:700;color:#7c3aed;margin-bottom:0.6rem;">Day '+currentDay+' Results</h3>' +
             dayEntry.matches.map((m, idx) => {
+                if (m.noResult) {
+                    return `<div class="match-result" style="background:linear-gradient(135deg,#f9fafb,#f3f4f6);border-color:#d1d5db;"><span class="result-text"><span class="winner-badge" style="background:linear-gradient(135deg,#6b7280,#9ca3af);">NO RESULT</span> ${m.team1} vs ${m.team2}</span><span class="result-text" style="color:#6b7280">abandoned · 1 pt each</span><span class="match-card-actions"><button class="btn-warning btn-sm" onclick="editWinner(${currentDay},${idx})">✏️ Edit</button><button class="btn-danger btn-sm" onclick="deleteMatch(${currentDay},${idx})">🗑 Undo</button></span></div>`;
+                }
                 const loser = m.winner===m.team1?m.team2:m.team1;
                 const wB = m.winner===m.team1?m.team1RatingBefore:m.team2RatingBefore;
                 const wA = m.winner===m.team1?m.team1RatingAfter:m.team2RatingAfter;
@@ -983,7 +1120,7 @@
                 let exNote = (exW||exL) ? `<div class="exception-note">⚠️ Exception (>100 pts gap): rating held for ${exW?m.winner:loser}</div>` : '';
                 const hasScore = m.scorecard ? true : false;
                 const scoreBtn = hasScore ? `<button class="btn-secondary btn-sm" onclick="viewScore(${currentDay},${idx})">📊 Score</button><button class="btn-warning btn-sm" onclick="editScore(${currentDay},${idx})">✏️ Edit</button>` : `<button class="btn-warning btn-sm" onclick="editScore(${currentDay},${idx})">+ Score</button>`;
-                return `<div class="match-result"><span class="result-text"><span class="winner-badge">WIN</span> ${m.winner} (${wB}→${wA})</span><span class="result-text" style="color:#6b7280">defeated</span><span class="result-text">${loser} (${lB}→${lA})</span><span class="match-card-actions">${scoreBtn}<button class="btn-danger btn-sm" onclick="deleteMatch(${currentDay},${idx})">🗑 Undo</button></span></div>${exNote}`;
+                return `<div class="match-result"><span class="result-text"><span class="winner-badge">WIN</span> ${m.winner} (${wB}→${wA})</span><span class="result-text" style="color:#6b7280">defeated</span><span class="result-text">${loser} (${lB}→${lA})</span><span class="match-card-actions">${scoreBtn}<button class="btn-secondary btn-sm" onclick="editWinner(${currentDay},${idx})">🔁 Result</button><button class="btn-danger btn-sm" onclick="deleteMatch(${currentDay},${idx})">🗑 Undo</button></span></div>${exNote}`;
             }).join('');
     }
 
@@ -994,6 +1131,9 @@
         container.innerHTML = [...history].sort((a,b)=>a.day-b.day).map(dayEntry => {
             if (dayEntry.matches.length === 0) return '';
             return `<div class="history-day"><h3>Day ${dayEntry.day}</h3>${dayEntry.matches.map((m,idx) => {
+                if (m.noResult) {
+                    return `<div class="match-result" style="background:linear-gradient(135deg,#f9fafb,#f3f4f6);border-color:#d1d5db;"><span class="result-text"><span class="winner-badge" style="background:linear-gradient(135deg,#6b7280,#9ca3af);">NO RESULT</span> ${m.team1} vs ${m.team2}</span><span class="result-text" style="color:#6b7280">abandoned · 1 pt each</span><span class="match-card-actions"><button class="btn-warning btn-sm" onclick="editWinner(${dayEntry.day},${idx})">✏️</button><button class="btn-danger btn-sm" onclick="deleteMatch(${dayEntry.day},${idx})">🗑 Undo</button></span></div>`;
+                }
                 const loser = m.winner===m.team1?m.team2:m.team1;
                 const wB = m.winner===m.team1?m.team1RatingBefore:m.team2RatingBefore;
                 const wA = m.winner===m.team1?m.team1RatingAfter:m.team2RatingAfter;
@@ -1001,7 +1141,7 @@
                 const lA = m.winner===m.team1?m.team2RatingAfter:m.team1RatingAfter;
                 const hasScore = m.scorecard ? true : false;
                 const scoreBtn = hasScore ? `<button class="btn-secondary btn-sm" onclick="viewScore(${dayEntry.day},${idx})">📊</button><button class="btn-warning btn-sm" onclick="editScore(${dayEntry.day},${idx})">✏️</button>` : `<button class="btn-warning btn-sm" onclick="editScore(${dayEntry.day},${idx})">+📊</button>`;
-                return `<div class="match-result"><span class="result-text"><span class="winner-badge">WIN</span> ${m.winner} (${wB}→${wA})</span><span class="result-text" style="color:#6b7280">def.</span><span class="result-text">${loser} (${lB}→${lA})</span><span class="match-card-actions">${scoreBtn}<button class="btn-danger btn-sm" onclick="deleteMatch(${dayEntry.day},${idx})">🗑 Undo</button></span></div>`;
+                return `<div class="match-result"><span class="result-text"><span class="winner-badge">WIN</span> ${m.winner} (${wB}→${wA})</span><span class="result-text" style="color:#6b7280">def.</span><span class="result-text">${loser} (${lB}→${lA})</span><span class="match-card-actions">${scoreBtn}<button class="btn-secondary btn-sm" onclick="editWinner(${dayEntry.day},${idx})">🔁</button><button class="btn-danger btn-sm" onclick="deleteMatch(${dayEntry.day},${idx})">🗑 Undo</button></span></div>`;
             }).join('')}</div>`;
         }).join('');
     }
@@ -1052,7 +1192,7 @@
         container.innerHTML = `
             <div class="section" style="margin:0;padding:1.2rem;background:linear-gradient(135deg,#eff6ff,#dbeafe);border:2px solid #60a5fa;">
                 <h3 style="font-size:0.95rem;font-weight:700;color:#1d4ed8;margin-bottom:1rem;">✏️ Edit Scorecard: ${match.team1} vs ${match.team2}</h3>
-                <p style="font-size:0.8rem;color:#6b7280;margin-bottom:1rem;">Winner: <strong>${match.winner}</strong> | Allotted Overs: <input type="number" id="esc_allottedOvers" value="${allottedOvers}" style="width:70px;" min="1" step="1"></p>
+                <p style="font-size:0.8rem;color:#6b7280;margin-bottom:1rem;">Winner: <select id="esc_winner" style="padding:0.3rem 0.5rem;font-size:0.85rem;"><option value="${match.team1}" ${match.winner===match.team1?'selected':''}>${match.team1}</option><option value="${match.team2}" ${match.winner===match.team2?'selected':''}>${match.team2}</option></select> | Allotted Overs: <input type="number" id="esc_allottedOvers" value="${allottedOvers}" style="width:70px;" min="1" step="1"></p>
                 <div class="form-row">
                     <div class="form-group">
                         <label>${match.team1} Runs</label>
@@ -1110,8 +1250,64 @@
             allottedOvers: allottedOvers
         };
 
+        // Apply winner change if the selector is present and changed
+        const winnerSelect = document.getElementById('esc_winner');
+        let winnerChanged = false;
+        if (winnerSelect && winnerSelect.value && winnerSelect.value !== match.winner) {
+            match.winner = winnerSelect.value;
+            winnerChanged = true;
+        }
+
         const div = getCurrentDivision();
         div.allottedOvers = allottedOvers;
+        // Recalculate ratings if the winner changed (affects rating progression)
+        if (winnerChanged) recalculateAllRatings();
+        saveAllData();
+        render();
+    }
+
+    // Edit just the winner of a match — also lets you convert to/from No Result
+    function editWinner(day, matchIndex) {
+        const history = getMatchHistory();
+        const dayEntry = history.find(h => h.day === day);
+        const match = dayEntry.matches[matchIndex];
+        const container = document.getElementById('dayResults');
+        const curVal = match.noResult ? '__NR__' : match.winner;
+        container.innerHTML = `
+            <div class="section" style="margin:0;padding:1.2rem;background:linear-gradient(135deg,#eff6ff,#dbeafe);border:2px solid #60a5fa;">
+                <h3 style="font-size:0.95rem;font-weight:700;color:#1d4ed8;margin-bottom:1rem;">✏️ Edit Result: ${match.team1} vs ${match.team2}</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Result</label>
+                        <select id="ew_winner">
+                            <option value="${match.team1}" ${curVal===match.team1?'selected':''}>${match.team1} won</option>
+                            <option value="${match.team2}" ${curVal===match.team2?'selected':''}>${match.team2} won</option>
+                            <option value="__NR__" ${curVal==='__NR__'?'selected':''}>No Result (Abandoned)</option>
+                        </select>
+                    </div>
+                </div>
+                <p style="font-size:0.75rem;color:#6b7280;margin-bottom:1rem;">Changing to/from No Result adjusts points and ratings automatically. Scorecard data (if any) is preserved.</p>
+                <div class="form-row" style="margin-bottom:0;">
+                    <button class="btn-success" onclick="saveEditedWinner(${day},${matchIndex})">✓ Save</button>
+                    <button class="btn-secondary" onclick="render()">Cancel</button>
+                </div>
+            </div>
+        `;
+    }
+
+    function saveEditedWinner(day, matchIndex) {
+        const history = getMatchHistory();
+        const dayEntry = history.find(h => h.day === day);
+        const match = dayEntry.matches[matchIndex];
+        const val = document.getElementById('ew_winner').value;
+        if (val === '__NR__') {
+            match.noResult = true;
+            match.winner = null;
+        } else {
+            match.noResult = false;
+            match.winner = val;
+        }
+        recalculateAllRatings();
         saveAllData();
         render();
     }
@@ -1132,69 +1328,58 @@
         downloadJSON(data, `${allData.tournaments[currentTournamentIndex].name}_${div.name}.json`);
     }
 
-    function importDivision() {
-        if (currentTournamentIndex < 0) return alert('Select a tournament first.');
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.json';
-        input.addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = async function(ev) {
-                try {
-                    const data = JSON.parse(ev.target.result);
-                    if (!data.name || !data.teams) throw new Error('Invalid division format');
-                    const tournament = allData.tournaments[currentTournamentIndex];
-                    const existingIdx = tournament.divisions.findIndex(d => d.name.toLowerCase() === data.name.toLowerCase());
-                    if (existingIdx >= 0) {
-                        if (!await customConfirm(`Division "${data.name}" exists. Overwrite?`)) return;
-                        tournament.divisions[existingIdx] = JSON.parse(JSON.stringify(data));
-                        currentDivisionIndex = existingIdx;
-                    } else {
-                        tournament.divisions.push(JSON.parse(JSON.stringify(data)));
-                        currentDivisionIndex = tournament.divisions.length - 1;
-                    }
-                    matchSlots = [];
-                    saveAllData();
-                    renderTournamentNav();
-                    render();
-                } catch (err) { alert('Invalid file: ' + err.message); }
-            };
-            reader.readAsText(file);
-        });
-        input.click();
+    function handleImportDivision(event) {
+        if (currentTournamentIndex < 0) { alert('Select a tournament first.'); event.target.value = ''; return; }
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async function(ev) {
+            try {
+                const data = JSON.parse(ev.target.result);
+                if (!data.name || !data.teams) throw new Error('Invalid division format');
+                const tournament = allData.tournaments[currentTournamentIndex];
+                const existingIdx = tournament.divisions.findIndex(d => d.name.toLowerCase() === data.name.toLowerCase());
+                if (existingIdx >= 0) {
+                    if (!await customConfirm(`Division "${data.name}" exists. Overwrite?`)) return;
+                    tournament.divisions[existingIdx] = JSON.parse(JSON.stringify(data));
+                    currentDivisionIndex = existingIdx;
+                } else {
+                    tournament.divisions.push(JSON.parse(JSON.stringify(data)));
+                    currentDivisionIndex = tournament.divisions.length - 1;
+                }
+                matchSlots = [];
+                saveAllData();
+                renderTournamentNav();
+                render();
+            } catch (err) { alert('Invalid file: ' + err.message); }
+        };
+        reader.readAsText(file);
+        event.target.value = '';
     }
 
     function exportAllData() {
         downloadJSON(JSON.stringify(allData, null, 2), 'amlca_all_tournaments.json');
     }
-
-    function importAllData() {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.json';
-        input.addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = function(ev) {
-                try {
-                    const data = JSON.parse(ev.target.result);
-                    if (!data.tournaments) throw new Error('Invalid format: missing tournaments array');
-                    allData = JSON.parse(JSON.stringify(data));
-                    currentTournamentIndex = allData.tournaments.length > 0 ? 0 : -1;
-                    currentDivisionIndex = (currentTournamentIndex >= 0 && allData.tournaments[0].divisions.length > 0) ? 0 : -1;
-                    currentDay = 1;
-                    matchSlots = [];
-                    saveAllData();
-                    renderTournamentNav();
-                    render();
-                } catch (err) { alert('Invalid file: ' + err.message); }
-            };
-            reader.readAsText(file);
-        });
-        input.click();
+    function handleImportAll(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(ev) {
+            try {
+                const data = JSON.parse(ev.target.result);
+                if (!data.tournaments) throw new Error('Invalid format: missing tournaments array');
+                allData = JSON.parse(JSON.stringify(data));
+                currentTournamentIndex = allData.tournaments.length > 0 ? 0 : -1;
+                currentDivisionIndex = (currentTournamentIndex >= 0 && allData.tournaments[0].divisions.length > 0) ? 0 : -1;
+                currentDay = 1;
+                matchSlots = [];
+                saveAllData();
+                renderTournamentNav();
+                render();
+            } catch (err) { alert('Invalid file: ' + err.message); }
+        };
+        reader.readAsText(file);
+        event.target.value = '';
     }
 
     function downloadJSON(data, filename) {
